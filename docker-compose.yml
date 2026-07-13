@@ -1,0 +1,85 @@
+name: fcg-orchestration
+
+# ------------------------------------------------------------------
+# FIAP Cloud Games - Local infrastructure (M0)
+# Brings up PostgreSQL (two logical databases) and a single-broker
+# Apache Kafka in KRaft mode (no Zookeeper), then pre-creates the
+# three FCG topics. No .NET services are defined here yet.
+# ------------------------------------------------------------------
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fcg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fcg}
+      POSTGRES_DB: ${POSTGRES_DB:-fcg}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fcg} -d ${POSTGRES_DB:-fcg}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  kafka:
+    image: apache/kafka:3.9.0
+    restart: unless-stopped
+    ports:
+      # Host access for services running on the host during development.
+      - "29092:29092"
+    environment:
+      # --- KRaft single-node (combined broker + controller) ---
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # --- Listeners ---
+      # PLAINTEXT      -> internal docker-network clients (advertised as kafka:9092)
+      # PLAINTEXT_HOST -> host machine clients            (advertised as localhost:29092)
+      KAFKA_LISTENERS: CONTROLLER://:9093,PLAINTEXT://:9092,PLAINTEXT_HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      # --- Single-broker safe defaults ---
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 1
+      # Valid KRaft cluster id (base64 of a 16-byte UUID).
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+
+  # One-shot job: waits for Kafka to be healthy, creates the three FCG
+  # topics idempotently, prints the topic list, then exits (0).
+  kafka-init:
+    image: apache/kafka:3.9.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Creating FCG topics..."
+        for topic in fcg.users.created fcg.orders.placed fcg.payments.processed; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+            --create --if-not-exists --topic "$$topic" --partitions 1 --replication-factor 1
+        done
+        echo "Current topics:"
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+    restart: "no"
+
+volumes:
+  pg_data:
