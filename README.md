@@ -14,9 +14,21 @@ This repository is the **orchestration** repo of a five-repository solution:
 | `fiap-cloud-games-notifications-api` | Console "e-mail" notifications |
 | **`fiap-cloud-games-orchestration`** | **Infra + full compose + docs (this repo)** |
 
-> **Milestone status: M7 — Kubernetes (local).**
-> The complete system runs on Docker Compose **and** on local Kubernetes
-> (Docker Desktop). See [Kubernetes (local)](#kubernetes-local) below.
+The complete system runs on **Docker Compose** and on **local Kubernetes**
+(Docker Desktop). This README is the **master entry point** for evaluators — start here.
+
+---
+
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | System overview, responsibilities, architecture diagram, design decisions, future improvements |
+| [docs/event-flows.md](docs/event-flows.md) | Registration & purchase sequence diagrams, topics, consumer groups, idempotency |
+| [contracts/README.md](contracts/README.md) | Canonical event contracts (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`) |
+| [docs/testing.md](docs/testing.md) | Unit tests (37) + validated Compose/Kubernetes evidence |
+| [docs/delivery-checklist.md](docs/delivery-checklist.md) | Requirement → where satisfied |
+| [docs/demo-script.md](docs/demo-script.md) | Video/demo roteiro |
 
 ---
 
@@ -158,18 +170,30 @@ documented future improvement, not integrated in this MVP.
 
 ---
 
-## Configuration
+## Configuration reference
 
-All values come from environment variables (see [`.env.example`](.env.example));
-only **local/development placeholders** — no real secrets committed. The compose
-file supplies fallback defaults, so it runs with or without a `.env`.
+Values come from environment variables (see [`.env.example`](.env.example)); only
+**local/development placeholders** are committed. Compose supplies fallback defaults,
+so it runs with or without a `.env`. The same .NET config keys are provided two ways:
+Compose `environment:` and Kubernetes ConfigMaps/Secret.
 
-- **Shared JWT** (`JWT__SECRETKEY`, `JWT__ISSUER`, `JWT__AUDIENCE`) is injected into
-  **both** `users-api` and `catalog-api` so CatalogAPI validates UsersAPI's tokens.
-- In-network names: services use `kafka:9092` and `postgres:5432` (never `localhost`).
-- No container healthchecks on the .NET services (the `aspnet` runtime image has no
-  curl); startup order is handled by `depends_on` (postgres healthy + kafka-init
-  completed) and `restart: unless-stopped`, plus the services' own retry/resilience.
+| Service | Config keys |
+|---|---|
+| `users-api` | `ConnectionStrings__Postgres` → `fcg_users` · `Jwt__SecretKey/Issuer/Audience` · `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` |
+| `catalog-api` | `ConnectionStrings__Postgres` → `fcg_catalog` · `Jwt__SecretKey/Issuer/Audience` · `Kafka__BootstrapServers` · `Kafka__OrderPlacedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__PaymentsConsumerGroup` |
+| `payments-api` | `Kafka__BootstrapServers` · `Kafka__OrderPlacedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` · `Payment__RejectAboveAmount` |
+| `notifications-api` | `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` |
+
+- **In-network names:** services use `kafka:9092` and `postgres:5432` (never `localhost`).
+- **Kubernetes:** a shared `fcg-config` (JWT issuer/audience, Kafka bootstrap) + a shared `fcg-secret` (JWT key, Postgres password) + a per-service ConfigMap; the DB password is injected from the Secret and never duplicated.
+- No container healthchecks on the .NET services (the `aspnet` image lacks curl); startup order is handled by `depends_on` (Compose) / `readinessProbe` (k8s) plus the services' retry/resilience.
+
+## Security & secrets
+
+- **Authentication:** shared symmetric **JWT** (HMAC-SHA256). UsersAPI issues tokens; CatalogAPI validates them locally with the **same** `SecretKey`/`Issuer`/`Audience` — no call to UsersAPI. Passwords are stored as **PBKDF2** hashes.
+- **Placeholders only:** `JWT__SECRETKEY` and the Postgres credentials are development placeholders in `.env.example` and `k8s/shared-secret.yaml`. `.gitignore` excludes `.env`/secrets; **no real secrets are committed**.
+- Local Kafka is **PLAINTEXT** (local-only); containers run as **non-root**.
+- **Future production improvement:** replace the placeholder Kubernetes Secret with a managed secret store such as **Azure Key Vault** — documented only, **not implemented** in this MVP.
 
 ---
 
@@ -185,13 +209,14 @@ fiap-cloud-games-orchestration/
 │   ├── namespace.yaml · shared-config.yaml · shared-secret.yaml
 │   ├── postgres.yaml · kafka.yaml · kafka-topics-job.yaml
 │   └── build-images.ps1/.sh · apply-all.ps1/.sh
-├── contracts/README.md         # canonical event-contract reference (docs only)
-└── docs/                        # reserved for diagrams (later milestones)
+├── contracts/README.md         # canonical event-contract reference
+└── docs/                        # architecture · event-flows · testing · delivery-checklist · demo-script
 ```
 
 ---
 
-## Next milestone
+## Status
 
-**M8 — tests & docs polish:** finalize unit tests, add architecture + event-flow
-diagrams to `docs/`, and complete all five READMEs as the delivery runbook.
+Phase 2 is **delivery-ready**: four event-driven microservices over Kafka, running via
+Docker Compose and on local Kubernetes, with per-service databases, a shared JWT, unit
+tests, and full documentation. See [docs/delivery-checklist.md](docs/delivery-checklist.md).
