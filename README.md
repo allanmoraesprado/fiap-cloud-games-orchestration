@@ -14,9 +14,9 @@ This repository is the **orchestration** repo of a five-repository solution:
 | `fiap-cloud-games-notifications-api` | Console "e-mail" notifications |
 | **`fiap-cloud-games-orchestration`** | **Infra + full compose + docs (this repo)** |
 
-> **Milestone status: M6 — Full Docker Compose Integration.**
-> The complete system runs locally with one command. Kubernetes manifests arrive
-> in M7.
+> **Milestone status: M7 — Kubernetes (local).**
+> The complete system runs on Docker Compose **and** on local Kubernetes
+> (Docker Desktop). See [Kubernetes (local)](#kubernetes-local) below.
 
 ---
 
@@ -115,6 +115,49 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-se
 
 ---
 
+## Kubernetes (local)
+
+Run the same system on **local Kubernetes** (Docker Desktop Kubernetes recommended).
+Manifests use the **hybrid** layout: each service repo has its own `/k8s`
+(Deployment + Service + ConfigMap); this repo's `/k8s` holds shared infrastructure
+(namespace, Kafka, PostgreSQL, shared ConfigMap/Secret) and the apply scripts. All
+resources live in the `fcg` namespace.
+
+> Enable Kubernetes in Docker Desktop (Settings → Kubernetes → Enable) first, and
+> stop the compose stack (`docker compose down`) so ports 8080/8082 are free for
+> port-forwarding. The four service repos must be cloned as siblings of this repo.
+
+```powershell
+# PowerShell is the primary path on Windows
+.\k8s\build-images.ps1     # build the 4 images (Docker Desktop shares the image store; no load step)
+.\k8s\apply-all.ps1        # namespace -> shared config/secret -> postgres+kafka -> topics Job -> services
+```
+Shell equivalents: `k8s/build-images.sh`, `k8s/apply-all.sh`.
+
+Validate:
+```powershell
+kubectl get pods -n fcg
+kubectl get svc  -n fcg
+kubectl get configmap,secret -n fcg
+
+# access UsersAPI + CatalogAPI (each in its own terminal)
+kubectl port-forward -n fcg svc/users-api   8080:8080
+kubectl port-forward -n fcg svc/catalog-api 8082:8080
+
+# Kafka / consumer-group evidence
+$KPOD = kubectl get pod -n fcg -l app=kafka -o jsonpath='{.items[0].metadata.name}'
+kubectl exec -n fcg $KPOD -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+kubectl exec -n fcg $KPOD -- /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group catalog-service
+```
+
+Tear down: `kubectl delete namespace fcg`.
+
+Secrets in `k8s/shared-secret.yaml` are **local/development placeholders only**. In
+production they would come from a secret manager (e.g. **Azure Key Vault**) — a
+documented future improvement, not integrated in this MVP.
+
+---
+
 ## Configuration
 
 All values come from environment variables (see [`.env.example`](.env.example));
@@ -138,6 +181,10 @@ fiap-cloud-games-orchestration/
 ├── .env.example                # config template (placeholders only)
 ├── .gitignore · README.md
 ├── db/init/01-create-databases.sql   # creates fcg_users + fcg_catalog
+├── k8s/                        # shared infra manifests + build/apply scripts
+│   ├── namespace.yaml · shared-config.yaml · shared-secret.yaml
+│   ├── postgres.yaml · kafka.yaml · kafka-topics-job.yaml
+│   └── build-images.ps1/.sh · apply-all.ps1/.sh
 ├── contracts/README.md         # canonical event-contract reference (docs only)
 └── docs/                        # reserved for diagrams (later milestones)
 ```
@@ -146,6 +193,5 @@ fiap-cloud-games-orchestration/
 
 ## Next milestone
 
-**M7 — Kubernetes:** per-service `/k8s` (Deployment + Service + ConfigMap + Secret)
-in each repo, plus shared infra (namespace, Kafka, Postgres, shared Secret/ConfigMap)
-and an apply script here; validated on local Kubernetes.
+**M8 — tests & docs polish:** finalize unit tests, add architecture + event-flow
+diagrams to `docs/`, and complete all five READMEs as the delivery runbook.

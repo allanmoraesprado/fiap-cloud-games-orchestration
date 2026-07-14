@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fcg-config
+  namespace: fcg
+data:
+  # Non-sensitive values shared across services.
+  # UsersAPI + CatalogAPI must agree on issuer/audience; all services use kafka:9092.
+  Jwt__Issuer: "FiapCloudGames"
+  Jwt__Audience: "FiapCloudGames"
+  Kafka__BootstrapServers: "kafka:9092"
