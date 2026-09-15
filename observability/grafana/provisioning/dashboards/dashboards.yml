@@ -1,0 +1,15 @@
+# Grafana dashboard provisioning (Phase 3 / P3-M5): loads every JSON under
+# observability/grafana/dashboards (mounted at /var/lib/grafana/dashboards).
+apiVersion: 1
+
+providers:
+  - name: fcg
+    orgId: 1
+    folder: FCG
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

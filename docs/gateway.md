@@ -14,7 +14,7 @@ clients should call the platform through the gateway.
 |---|---|---|
 | **Gateway proxy** | `http://localhost:8000` | Official entry point for `/api/*` |
 | Gateway Admin API | `http://127.0.0.1:8001` | Bound to localhost; read-only in DB-less (inspection: `/routes`, `/plugins`, `/consumers`) |
-| Gateway Status API | `http://127.0.0.1:8100/metrics` | Prometheus metrics (scraped in a later milestone) |
+| Gateway Status API | `http://127.0.0.1:8100/metrics` | Prometheus metrics (scraped by Prometheus since P3-M5, see [observability.md](observability.md)) |
 | UsersAPI (direct) | `http://localhost:8080/swagger` | Swagger UI + dev access |
 | CatalogAPI (direct) | `http://localhost:8082/swagger` | Swagger UI + dev access |
 | PaymentsAPI (direct) | `http://localhost:8083/swagger` | Swagger UI + dev access (since P3-M4) |
@@ -150,7 +150,8 @@ To apply a change to `gateway/kong.yml`: `docker compose restart kong` (or `dock
 - Rate limiting uses the `local` policy (per Kong node). A shared policy (Redis) is not needed
   for a single local node.
 - Kong on **Kubernetes** (DB-less Deployment + ConfigMap + NodePort) comes in **P3-M7**;
-  Prometheus/Grafana scraping of `kong_*` metrics in **P3-M5**; centralized logs in **P3-M6**.
+  `kong_*` metrics are scraped by Prometheus and shown in Grafana since **P3-M5**; centralized
+  logs in **P3-M6**.
 - Host ports (including `KONG_PROXY_PORT`, `KONG_ADMIN_PORT`, `KONG_STATUS_PORT`) are
   parameterized in `.env` since **P3-M3**; the URLs in this page use the defaults.
 - Startup: Kong is healthy before the .NET services finish booting (they have no container

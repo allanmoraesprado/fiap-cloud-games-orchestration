@@ -29,6 +29,7 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 | [docs/gateway.md](docs/gateway.md) | **Phase 3** Kong API Gateway: routes, JWT at the edge, rate limit, correlation id, metrics, curl examples |
 | [docs/cache.md](docs/cache.md) | **Phase 3** Redis distributed cache (CatalogAPI): strategy, keys, TTLs, invalidation, HIT/MISS demo |
 | [docs/nosql.md](docs/nosql.md) | **Phase 3** MongoDB (PaymentsAPI): payment history document, idempotent upsert, payment-status query through Kong |
+| [docs/observability.md](docs/observability.md) | **Phase 3** Prometheus + Grafana: scraped targets, metrics per service, FCG Overview dashboard, validation |
 | [docs/event-flows.md](docs/event-flows.md) | Registration & purchase sequence diagrams, topics, consumer groups, idempotency |
 | [contracts/README.md](contracts/README.md) | Canonical event contracts (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`) |
 | [docs/testing.md](docs/testing.md) | Unit tests (37) + validated Compose/Kubernetes evidence |
@@ -58,6 +59,11 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 - **MongoDB 7** — Phase 3 NoSQL database of PaymentsAPI: payment history in
   `fcg_payments.payments` (one document per order, idempotent upsert) and the protected
   `GET /api/payments/order/{orderId}` query. Details in [docs/nosql.md](docs/nosql.md).
+- **Prometheus + Grafana** — Phase 3 observability: `/metrics` on the three APIs
+  (prometheus-net, HTTP + domain counters), Kong metrics, Prometheus with static targets and a
+  Grafana provisioned automatically with the **FCG Overview** dashboard
+  (`observability/`). Centralized logs (Loki + Alloy) follow in P3-M6. Details in
+  [docs/observability.md](docs/observability.md).
 
 Single-broker, RF 1, single-partition are deliberate **MVP** choices.
 
@@ -105,7 +111,8 @@ the same value.
 | `MONGO_HOST_PORT` | 27017 | `PAYMENTS_API_HOST_PORT` | 8083 |
 | `KAFKA_HOST_PORT` | 29092 | `NOTIFICATIONS_API_HOST_PORT` | 8081 |
 | `KONG_PROXY_PORT` | 8000 | `KONG_ADMIN_PORT` | 8001 |
-| `KONG_STATUS_PORT` | 8100 | | |
+| `KONG_STATUS_PORT` | 8100 | `PROMETHEUS_HOST_PORT` | 9090 |
+| `GRAFANA_HOST_PORT` | 3000 | | |
 
 Stop:
 ```bash
@@ -125,6 +132,9 @@ docker compose down -v        # also removes the volume (forces DB re-init)
 | PaymentsAPI (direct) | http://localhost:8083/swagger | Swagger + dev only; payment history query |
 | Redis (direct) | `localhost:6379` (`REDIS_HOST_PORT`) | cache inspection with `redis-cli` (see [docs/cache.md](docs/cache.md)) |
 | MongoDB (direct) | `localhost:27017` (`MONGO_HOST_PORT`) | `fcg_payments` inspection with `mongosh` (see [docs/nosql.md](docs/nosql.md)) |
+| **Grafana** | http://localhost:3000 | `admin` / `admin` (dev placeholders); dashboard **FCG → FCG Overview** (see [docs/observability.md](docs/observability.md)) |
+| Prometheus | http://localhost:9090 | targets: users-api, catalog-api, payments-api, kong |
+| API metrics (direct) | http://localhost:8080/metrics · :8082/metrics · :8083/metrics | prometheus-net, not routed by Kong |
 
 Swagger UI is served by the services on their direct ports only (not through Kong).
 URLs above use the default host ports; adjust if you changed them in `.env`.
@@ -145,7 +155,9 @@ URLs above use the default host ports; adjust if you changed them in `.env`.
 6. `GET http://localhost:8000/api/payments/order/{orderId}` → 200 with `status: Approved` and
    the reason (payment history from MongoDB; another user gets 403, Admin 200).
 7. Burst 12 calls to `GET /api/games` → **429** after the 5th (rate limit, see [docs/gateway.md](docs/gateway.md)).
-8. Watch the chain: `docker compose logs -f kong users-api catalog-api payments-api notifications-api`.
+8. Open Grafana (`http://localhost:3000`, `admin`/`admin`) → **FCG Overview**: request rates,
+   Kong routes and 401/429, cache HIT/MISS, payment decisions and queries, Kafka events.
+9. Watch the chain: `docker compose logs -f kong users-api catalog-api payments-api notifications-api`.
 
 The same calls work on the direct ports (8080/8082) for development.
 
@@ -250,17 +262,18 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 
 ```
 fiap-cloud-games-orchestration/
-├── docker-compose.yml          # postgres + kafka + kafka-init + redis + mongo + 4 services + kong
+├── docker-compose.yml          # postgres + kafka + kafka-init + redis + mongo + 4 services + kong + prometheus + grafana
 ├── .env.example                # config template (placeholders + host ports)
 ├── .gitignore · README.md
 ├── gateway/kong.yml            # Kong DB-less declarative config (routes, JWT, plugins)
+├── observability/              # prometheus/prometheus.yml · grafana/provisioning (datasource, dashboards) · grafana/dashboards/fcg-overview.json
 ├── db/init/01-create-databases.sql   # creates fcg_users + fcg_catalog
 ├── k8s/                        # shared infra manifests + build/apply scripts
 │   ├── namespace.yaml · shared-config.yaml · shared-secret.yaml
 │   ├── postgres.yaml · kafka.yaml · kafka-topics-job.yaml
 │   └── build-images.ps1/.sh · apply-all.ps1/.sh
 ├── contracts/README.md         # canonical event-contract reference
-└── docs/                        # architecture · gateway · cache · nosql · event-flows · testing · delivery-checklist · demo-script
+└── docs/                        # architecture · gateway · cache · nosql · observability · event-flows · testing · delivery-checklist · demo-script
 ```
 
 ---
@@ -272,6 +285,6 @@ running via Docker Compose and on local Kubernetes, with per-service databases, 
 JWT, unit tests, and full documentation. See [docs/delivery-checklist.md](docs/delivery-checklist.md).
 
 **Phase 3 in progress:** P3-M1 Notifications Function (own repository, `func start`),
-P3-M2 Kong API Gateway (this repo, Compose), P3-M3 Redis cache + host-port parameterization
-and P3-M4 MongoDB payment history are done. Next: Prometheus/Grafana, Loki, Kubernetes
-updates and final docs.
+P3-M2 Kong API Gateway (this repo, Compose), P3-M3 Redis cache + host-port parameterization,
+P3-M4 MongoDB payment history and P3-M5 Prometheus + Grafana metrics are done. Next: Loki +
+Alloy centralized logs (P3-M6), Kubernetes updates and final docs.

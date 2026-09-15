@@ -1,0 +1,32 @@
+# ------------------------------------------------------------------
+# FIAP Cloud Games - Prometheus (Phase 3 / P3-M5)
+# Static targets on the compose network: the three .NET APIs expose /metrics
+# (prometheus-net) and Kong exposes its prometheus plugin on the Status API.
+# Short scrape interval on purpose: local demo, changes show up in seconds.
+# No Alertmanager, no service discovery (Kubernetes comes in a later milestone).
+# ------------------------------------------------------------------
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: users-api
+    static_configs:
+      - targets: ["users-api:8080"]
+
+  - job_name: catalog-api
+    static_configs:
+      - targets: ["catalog-api:8080"]
+
+  - job_name: payments-api
+    static_configs:
+      - targets: ["payments-api:8080"]
+
+  # Kong Status API (KONG_STATUS_LISTEN 0.0.0.0:8100) -> kong_* metrics from the prometheus plugin.
+  - job_name: kong
+    static_configs:
+      - targets: ["kong:8100"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

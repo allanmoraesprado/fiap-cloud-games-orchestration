@@ -5,8 +5,9 @@ name: fcg-orchestration
 # PostgreSQL (two logical databases) + single-broker Apache Kafka
 # (KRaft, no Zookeeper) + topic init, plus the four microservices (Phase 2),
 # the Kong API Gateway (Phase 3 / P3-M2, DB-less, ./gateway/kong.yml),
-# Redis (Phase 3 / P3-M3, distributed cache for the CatalogAPI read model) and
-# MongoDB (Phase 3 / P3-M4, NoSQL payment history for PaymentsAPI).
+# Redis (Phase 3 / P3-M3, distributed cache for the CatalogAPI read model),
+# MongoDB (Phase 3 / P3-M4, NoSQL payment history for PaymentsAPI) and
+# Prometheus + Grafana (Phase 3 / P3-M5, metrics; ./observability).
 # `docker compose up -d --build` runs the complete system.
 #
 # Host ports are parameterized (*_HOST_PORT / KONG_*_PORT in .env.example) so a
@@ -269,6 +270,58 @@ services:
       - "127.0.0.1:${KONG_STATUS_PORT:-8100}:8100"
     healthcheck:
       test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ------------------------------------------------------------------
+  # Observability (Phase 3 / P3-M5). Prometheus scrapes the three .NET APIs
+  # (/metrics via prometheus-net) and the Kong Status API (prometheus plugin) over
+  # the compose network; Grafana is provisioned automatically with the Prometheus
+  # datasource and the "FCG Overview" dashboard (./observability/grafana).
+  # Centralized logs (Loki + Alloy) are added in P3-M6. Local/dev credentials only.
+  # ------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=2d
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "${PROMETHEUS_HOST_PORT:-9090}:9090"
+    depends_on:
+      - users-api
+      - catalog-api
+      - payments-api
+      - kong
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_HOST_PORT:-3000}:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 10

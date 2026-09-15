@@ -1,0 +1,13 @@
+# Grafana datasource provisioning (Phase 3 / P3-M5): Prometheus on the compose network.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s
