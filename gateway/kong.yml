@@ -1,0 +1,133 @@
+# ------------------------------------------------------------------
+# FIAP Cloud Games - Kong Gateway declarative configuration (DB-less)
+# Phase 3 / P3-M2. Loaded by the `kong` service in docker-compose.yml
+# (KONG_DATABASE=off, KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml).
+#
+# Routing: prefix match with strip_path=false, so every service receives
+# exactly the paths it already exposes (no API change). Swagger UI is NOT
+# routed through Kong: use the direct service ports (8080 / 8082).
+#
+# JWT: validated at the edge by the `jwt` plugin on protected routes.
+# UsersAPI signs HS256 tokens with iss=FiapCloudGames; the plugin maps that
+# `iss` claim to the consumer credential below (key) and verifies the
+# signature with `secret` plus the `exp` claim. UsersAPI and CatalogAPI keep
+# validating the same token internally (defense in depth).
+#
+# Secrets: the credential secret below is the LOCAL/DEV PLACEHOLDER already
+# committed in .env.example / docker-compose.yml defaults / k8s/shared-secret.yaml
+# (JWT__SECRETKEY). It must stay identical to the value the services use. Kong OSS
+# 3.9 does not resolve vault references ({vault://env/...}) in jwt_secrets (the
+# field is not referenceable; verified in P3-M2), so the value is literal here.
+# Never put a real secret in this file; in production the gateway config would
+# be rendered from a secret store at deploy time.
+# ------------------------------------------------------------------
+_format_version: "3.0"
+_transform: true
+
+services:
+  # ---------------- UsersAPI (identity) ----------------
+  - name: users-api
+    url: http://users-api:8080
+    routes:
+      # PUBLIC: /api/auth/register and /api/auth/login (no JWT).
+      - name: users-auth-public
+        paths:
+          - /api/auth
+        strip_path: false
+      # PROTECTED: user administration (Admin role is enforced by UsersAPI itself).
+      - name: users-protected
+        paths:
+          - /api/users
+        strip_path: false
+        plugins:
+          - name: jwt
+            config:
+              key_claim_name: iss
+              claims_to_verify:
+                - exp
+
+  # ---------------- CatalogAPI (games + library) ----------------
+  - name: catalog-api
+    url: http://catalog-api:8080
+    routes:
+      - name: catalog-games
+        paths:
+          - /api/games
+        strip_path: false
+        plugins:
+          - name: jwt
+            config:
+              key_claim_name: iss
+              claims_to_verify:
+                - exp
+      - name: catalog-library
+        paths:
+          - /api/library
+        strip_path: false
+        plugins:
+          - name: jwt
+            config:
+              key_claim_name: iss
+              claims_to_verify:
+                - exp
+
+  # ---------------- PaymentsAPI (payment history, P3-M4) ----------------
+  # Reserved for the protected payment-status endpoint added in P3-M4. Until
+  # then Kong validates the JWT and the upstream answers 404 for these paths.
+  - name: payments-api
+    url: http://payments-api:8080
+    routes:
+      - name: payments-protected
+        paths:
+          - /api/payments
+        strip_path: false
+        plugins:
+          - name: jwt
+            config:
+              key_claim_name: iss
+              claims_to_verify:
+                - exp
+
+# The JWT issuer (UsersAPI) modelled as a Kong consumer. `key` must equal the
+# token's `iss` claim (Jwt__Issuer); `secret` is the shared HS256 signing key
+# (LOCAL/DEV PLACEHOLDER, same as JWT__SECRETKEY in .env.example).
+consumers:
+  - username: fcg-users-api
+    jwt_secrets:
+      - key: FiapCloudGames
+        algorithm: HS256
+        secret: dev-only-change-me-please-min-32-characters-placeholder
+
+# Global plugins (apply to every route).
+plugins:
+  # Low, demonstrable limit: a burst above 5 req/s (or 120 req/min) returns
+  # HTTP 429. `local` policy = per Kong node, no Redis needed. Limited by client
+  # IP because every authenticated call maps to the same issuer consumer.
+  - name: rate-limiting
+    config:
+      second: 5
+      minute: 120
+      policy: local
+      limit_by: ip
+      fault_tolerant: true
+      hide_client_headers: false
+      error_code: 429
+      error_message: "API rate limit exceeded"
+
+  # Generates X-Correlation-ID per request, forwards it upstream and echoes it
+  # back to the client, so a request can be traced across gateway and services.
+  - name: correlation-id
+    config:
+      header_name: X-Correlation-ID
+      generator: uuid
+      echo_downstream: true
+
+  # Exposes Kong metrics at the Status API (/metrics on port 8100) and the
+  # Admin API (/metrics on port 8001). Scraped by Prometheus in a later milestone.
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+      per_consumer: false

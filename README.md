@@ -1,18 +1,20 @@
 # FIAP Cloud Games — Orchestration
 
-Local infrastructure **and** full-system runner for the FIAP Cloud Games Phase 2
-event-driven microservices platform. From this repo, `docker compose up -d --build`
-brings up PostgreSQL, Kafka, and all four microservices.
+Local infrastructure **and** full-system runner for the FIAP Cloud Games event-driven
+microservices platform (Phase 2, now evolving in **Phase 3**). From this repo,
+`docker compose up -d --build` brings up PostgreSQL, Kafka, the microservices and the
+**Kong API Gateway**.
 
-This repository is the **orchestration** repo of a five-repository solution:
+This repository is the **orchestration** repo of a six-repository solution:
 
 | Repository | Role |
 |---|---|
 | `fiap-cloud-games-users-api` | Identity: register, login, JWT, roles |
 | `fiap-cloud-games-catalog-api` | Games, library, purchase orchestration |
 | `fiap-cloud-games-payments-api` | Simulated payment processing |
-| `fiap-cloud-games-notifications-api` | Console "e-mail" notifications |
-| **`fiap-cloud-games-orchestration`** | **Infra + full compose + docs (this repo)** |
+| `fiap-cloud-games-notifications-api` | Console "e-mail" notifications (Phase 2; replaced by the function in Phase 3) |
+| `fiap-cloud-games-notifications-function` | **Phase 3**: Kafka-triggered Azure Function (serverless notifications, run with `func start`) |
+| **`fiap-cloud-games-orchestration`** | **Infra + gateway + full compose + docs (this repo)** |
 
 The complete system runs on **Docker Compose** and on **local Kubernetes**
 (Docker Desktop). This README is the **master entry point** for evaluators — start here.
@@ -24,6 +26,7 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 | Doc | Contents |
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | System overview, responsibilities, architecture diagram, design decisions, future improvements |
+| [docs/gateway.md](docs/gateway.md) | **Phase 3** Kong API Gateway: routes, JWT at the edge, rate limit, correlation id, metrics, curl examples |
 | [docs/event-flows.md](docs/event-flows.md) | Registration & purchase sequence diagrams, topics, consumer groups, idempotency |
 | [contracts/README.md](contracts/README.md) | Canonical event contracts (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`) |
 | [docs/testing.md](docs/testing.md) | Unit tests (37) + validated Compose/Kubernetes evidence |
@@ -43,6 +46,10 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 - **Four microservices** built from the sibling repos, wired to `kafka:9092` and
   `postgres:5432`, sharing a JWT secret between UsersAPI and CatalogAPI.
 - **Canonical event contracts**: [`contracts/README.md`](contracts/README.md).
+- **Kong API Gateway 3.9 (DB-less)** — Phase 3 official entry point on `http://localhost:8000`:
+  JWT validated at the edge on protected routes, rate limiting, correlation id and Prometheus
+  metrics. Declarative config in [`gateway/kong.yml`](gateway/kong.yml); details in
+  [docs/gateway.md](docs/gateway.md).
 
 Single-broker, RF 1, single-partition are deliberate **MVP** choices.
 
@@ -83,23 +90,30 @@ docker compose down -v        # also removes the volume (forces DB re-init)
 
 | Service | URL | Notes |
 |---|---|---|
-| UsersAPI | http://localhost:8080/swagger | register / login / users |
-| CatalogAPI | http://localhost:8082/swagger | games / library |
-| NotificationsAPI | http://localhost:8081/health | console e-mails (see logs) |
-| PaymentsAPI | http://localhost:8083/health | payment simulation (see logs) |
+| **API Gateway (Kong)** | **http://localhost:8000** | **Official entry point** for `/api/*` — public: `/api/auth/*`; JWT required: `/api/users/*`, `/api/games/*`, `/api/library/*`, `/api/payments/*` |
+| Kong Admin / Status | http://127.0.0.1:8001 · http://127.0.0.1:8100/metrics | localhost only; inspection + Prometheus metrics |
+| UsersAPI (direct) | http://localhost:8080/swagger | Swagger + dev only |
+| CatalogAPI (direct) | http://localhost:8082/swagger | Swagger + dev only |
+| NotificationsAPI (direct) | http://localhost:8081/health | Phase 2 legacy consumer (see logs) |
+| PaymentsAPI (direct) | http://localhost:8083/health | payment simulation (see logs) |
+
+Swagger UI is served by the services on their direct ports only (not through Kong).
 
 ---
 
-## Demo flow (containers only)
+## Demo flow (through the gateway)
 
-1. `POST http://localhost:8080/api/auth/register` → 201 → **welcome e-mail** in
-   `docker compose logs notifications-api`.
-2. `POST http://localhost:8080/api/auth/login` → copy the token.
-3. `GET http://localhost:8082/api/games` with the token → 200 (CatalogAPI validates
-   the UsersAPI token via the shared secret).
-4. `POST http://localhost:8082/api/library/acquire/{gameId}` → **202** `{ orderId }`.
-5. `GET http://localhost:8082/api/library/my-games` → the game appears.
-6. Watch the chain: `docker compose logs -f users-api catalog-api payments-api notifications-api`.
+1. `POST http://localhost:8000/api/auth/register` → 201 (public route) → **welcome e-mail**
+   in `docker compose logs notifications-api` (or in the Notifications Function terminal).
+2. `POST http://localhost:8000/api/auth/login` → copy the token (public route).
+3. `GET http://localhost:8000/api/games` **without** token → **401** from Kong; **with** the
+   token → 200 (Kong validates the JWT at the edge, then CatalogAPI validates it again).
+4. `POST http://localhost:8000/api/library/acquire/{gameId}` → **202** `{ orderId }`.
+5. `GET http://localhost:8000/api/library/my-games` → the game appears.
+6. Burst 12 calls to `GET /api/games` → **429** after the 5th (rate limit, see [docs/gateway.md](docs/gateway.md)).
+7. Watch the chain: `docker compose logs -f kong users-api catalog-api payments-api notifications-api`.
+
+The same calls work on the direct ports (8080/8082) for development.
 
 Seeded users: `admin@fcg.com / Admin@123`, `user@fcg.com / User@123`.
 
@@ -191,6 +205,7 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 ## Security & secrets
 
 - **Authentication:** shared symmetric **JWT** (HMAC-SHA256). UsersAPI issues tokens; CatalogAPI validates them locally with the **same** `SecretKey`/`Issuer`/`Audience` — no call to UsersAPI. Passwords are stored as **PBKDF2** hashes.
+- **Gateway (Phase 3):** Kong validates the same token at the edge on protected routes (`jwt` plugin, consumer credential keyed by the `iss` claim). The services keep validating it (defense in depth) and own all role/ownership authorization. The credential secret in `gateway/kong.yml` is the same committed dev placeholder as `JWT__SECRETKEY` and must be kept in sync with it — see [docs/gateway.md](docs/gateway.md).
 - **Placeholders only:** `JWT__SECRETKEY` and the Postgres credentials are development placeholders in `.env.example` and `k8s/shared-secret.yaml`. `.gitignore` excludes `.env`/secrets; **no real secrets are committed**.
 - Local Kafka is **PLAINTEXT** (local-only); containers run as **non-root**.
 - **Future production improvement:** replace the placeholder Kubernetes Secret with a managed secret store such as **Azure Key Vault** — documented only, **not implemented** in this MVP.
@@ -201,22 +216,27 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 
 ```
 fiap-cloud-games-orchestration/
-├── docker-compose.yml          # postgres + kafka + kafka-init + 4 services
+├── docker-compose.yml          # postgres + kafka + kafka-init + 4 services + kong
 ├── .env.example                # config template (placeholders only)
 ├── .gitignore · README.md
+├── gateway/kong.yml            # Kong DB-less declarative config (routes, JWT, plugins)
 ├── db/init/01-create-databases.sql   # creates fcg_users + fcg_catalog
 ├── k8s/                        # shared infra manifests + build/apply scripts
 │   ├── namespace.yaml · shared-config.yaml · shared-secret.yaml
 │   ├── postgres.yaml · kafka.yaml · kafka-topics-job.yaml
 │   └── build-images.ps1/.sh · apply-all.ps1/.sh
 ├── contracts/README.md         # canonical event-contract reference
-└── docs/                        # architecture · event-flows · testing · delivery-checklist · demo-script
+└── docs/                        # architecture · gateway · event-flows · testing · delivery-checklist · demo-script
 ```
 
 ---
 
 ## Status
 
-Phase 2 is **delivery-ready**: four event-driven microservices over Kafka, running via
-Docker Compose and on local Kubernetes, with per-service databases, a shared JWT, unit
-tests, and full documentation. See [docs/delivery-checklist.md](docs/delivery-checklist.md).
+Phase 2 is **delivery-ready** (tag `phase-2`): four event-driven microservices over Kafka,
+running via Docker Compose and on local Kubernetes, with per-service databases, a shared
+JWT, unit tests, and full documentation. See [docs/delivery-checklist.md](docs/delivery-checklist.md).
+
+**Phase 3 in progress:** P3-M1 Notifications Function (own repository, `func start`) and
+P3-M2 Kong API Gateway (this repo, Compose) are done. Next: Redis cache, MongoDB, Prometheus/
+Grafana, Loki, Kubernetes updates and final docs.
