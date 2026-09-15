@@ -89,7 +89,8 @@ for that `orderId` stays **1**, `updatedAt` moves, `createdAt` does not.
 
 ## Out of scope (by design)
 
-No replica set, no transactions, no outbox, no MongoDB on Kubernetes yet (P3-M7), no
-Prometheus metrics for MongoDB (P3-M5). A cloud deployment would use a managed MongoDB
-(Azure Cosmos DB for MongoDB or Atlas) with the connection string in a secret store —
-documented only.
+No replica set, no transactions, no outbox, no MongoDB exporter for Prometheus (PaymentsAPI
+exports `fcg_payments_history_writes_total` and `fcg_payments_queries_total` instead). On
+Kubernetes MongoDB runs from `k8s/mongo.yaml` (emptyDir, root password from `fcg-secret`).
+A cloud deployment would use a managed MongoDB (Azure Cosmos DB for MongoDB or Atlas) with
+the connection string in a secret store — documented only.

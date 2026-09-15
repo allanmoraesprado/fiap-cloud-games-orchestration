@@ -16,19 +16,22 @@
 
 | Topic | Key | Producer | Consumer group(s) |
 |---|---|---|---|
-| `fcg.users.created` | `UserId` | UsersAPI | `notifications-service` |
+| `fcg.users.created` | `UserId` | UsersAPI | `notifications-function` |
 | `fcg.orders.placed` | `OrderId` | CatalogAPI | `payments-service` |
-| `fcg.payments.processed` | `OrderId` | PaymentsAPI | `catalog-service`, `notifications-service` |
+| `fcg.payments.processed` | `OrderId` | PaymentsAPI | `catalog-service`, `notifications-function` |
 
 > The two consumers of `fcg.payments.processed` use **different** consumer group
-> ids, so **both** receive every message (fan-out).
+> ids, so **both** receive every message (fan-out). Since Phase 3 the notifications
+> consumer is the **Notifications Function** (group `notifications-function`); the Phase 2
+> NotificationsAPI (group `notifications-service`) is history only. The contracts did
+> **not** change between phases.
 
 ---
 
 ## UserCreatedEvent
 
 Produced by **UsersAPI** after a user is successfully registered.
-Consumed by **NotificationsAPI** to log a simulated welcome e-mail.
+Consumed by the **Notifications Function** to log a simulated welcome e-mail.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -77,9 +80,10 @@ public record OrderPlacedEvent(
 
 ## PaymentProcessedEvent
 
-Produced by **PaymentsAPI** after the simulated payment decision.
-Consumed by **CatalogAPI** (adds the game to the library if approved) **and**
-**NotificationsAPI** (logs a simulated purchase-confirmation e-mail if approved).
+Produced by **PaymentsAPI** after the simulated payment decision (the same decision is
+persisted in MongoDB as the payment history). Consumed by **CatalogAPI** (adds the game to
+the library if approved) **and** the **Notifications Function** (logs a simulated
+purchase-confirmation e-mail if approved).
 
 | Field | Type | Notes |
 |---|---|---|

@@ -1,9 +1,10 @@
 # FIAP Cloud Games — Orchestration
 
 Local infrastructure **and** full-system runner for the FIAP Cloud Games event-driven
-microservices platform (Phase 2, now evolving in **Phase 3**). From this repo,
-`docker compose up -d --build` brings up PostgreSQL, Kafka, the microservices and the
-**Kong API Gateway**.
+microservices platform (**Phase 3**). From this repo, `docker compose up -d --build` brings up
+PostgreSQL, Kafka, Redis, MongoDB, the three .NET APIs, the serverless Notifications Function,
+the **Kong API Gateway** and the observability stack (Prometheus, Grafana, Loki, Alloy); the
+same platform runs on local Kubernetes. Final delivery report: [docs/final-report.md](docs/final-report.md).
 
 This repository is the **orchestration** repo of a six-repository solution:
 
@@ -33,9 +34,11 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 | [docs/kubernetes.md](docs/kubernetes.md) | **Phase 3** local Kubernetes: what runs, ConfigMaps from shared files, build/apply, NodePorts, validation, logging decision |
 | [docs/event-flows.md](docs/event-flows.md) | Registration & purchase sequence diagrams, topics, consumer groups, idempotency |
 | [contracts/README.md](contracts/README.md) | Canonical event contracts (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`) |
-| [docs/testing.md](docs/testing.md) | Unit tests (37) + validated Compose/Kubernetes evidence |
-| [docs/delivery-checklist.md](docs/delivery-checklist.md) | Requirement → where satisfied |
-| [docs/demo-script.md](docs/demo-script.md) | Video/demo roteiro |
+| [docs/testing.md](docs/testing.md) | Unit tests (71 + 2 legacy) + validated Compose/Kubernetes evidence |
+| [docs/delivery-checklist.md](docs/delivery-checklist.md) | Phase 3 requirement → where satisfied → evidence |
+| [docs/demo-script.md](docs/demo-script.md) | 12–15 min video/demo roteiro |
+| [docs/final-report.md](docs/final-report.md) | Final delivery report draft (links, mapping, how to run, placeholders, tag plan) |
+| [scripts/smoke-compose.ps1](scripts/smoke-compose.ps1) | End-to-end smoke test of the Compose stack through Kong |
 
 ---
 
@@ -102,6 +105,14 @@ docker compose up -d --build  # builds the 3 API images + the function image, st
 `kafka-init` is a one-shot job that creates the topics and exits `0` — expected.
 The Phase 2 `notifications-api` is not started by default; `docker compose --profile phase2-legacy up -d`
 adds it (stop `notifications-function` first to avoid two notification consumers).
+
+### Smoke test (through Kong)
+
+```powershell
+.\scripts\smoke-compose.ps1          # register, login, games MISS/HIT, approved + rejected purchase,
+                                     # payment status, library, Prometheus targets, Loki notification logs
+```
+Exit code 0 means every check passed; calls are paced to stay under the rate limit.
 
 ### Host ports
 
@@ -276,6 +287,7 @@ fiap-cloud-games-orchestration/
 ├── .gitignore · README.md
 ├── gateway/kong.yml            # Kong DB-less declarative config (routes, JWT, plugins)
 ├── observability/              # prometheus/prometheus.yml · loki/loki.yml · alloy/config.alloy · grafana/provisioning (datasources, dashboards) · grafana/dashboards/*.json
+├── scripts/smoke-compose.ps1   # end-to-end smoke test through Kong (Compose)
 ├── db/init/01-create-databases.sql   # creates fcg_users + fcg_catalog
 ├── k8s/                        # shared infra + gateway + observability manifests, build/apply scripts
 │   ├── namespace.yaml · shared-config.yaml · shared-secret.yaml
@@ -283,19 +295,15 @@ fiap-cloud-games-orchestration/
 │   ├── kong.yaml · prometheus.yaml · grafana.yaml
 │   └── build-images.ps1/.sh · apply-all.ps1/.sh
 ├── contracts/README.md         # canonical event-contract reference
-└── docs/                        # architecture · gateway · cache · nosql · observability · kubernetes · event-flows · testing · delivery-checklist · demo-script
+└── docs/                        # architecture · gateway · cache · nosql · observability · kubernetes · event-flows · testing · delivery-checklist · demo-script · final-report
 ```
 
 ---
 
 ## Status
 
-Phase 2 is **delivery-ready** (tag `phase-2`): four event-driven microservices over Kafka,
-running via Docker Compose and on local Kubernetes, with per-service databases, a shared
-JWT, unit tests, and full documentation. See [docs/delivery-checklist.md](docs/delivery-checklist.md).
-
-**Phase 3 in progress:** P3-M1 Notifications Function (own repository), P3-M2 Kong API
-Gateway, P3-M3 Redis cache + host-port parameterization, P3-M4 MongoDB payment history,
-P3-M5 Prometheus + Grafana metrics, P3-M6 Loki + Alloy centralized logs (with the function
-wired into Compose) and P3-M7 local Kubernetes for the whole Phase 3 stack are done. Next:
-final docs and delivery checklist (P3-M8).
+**Phase 3 is delivery-ready** (tag `phase-3` after the final push; Phase 2 is preserved as
+tag `phase-2`): Kong API Gateway with JWT at the edge, serverless Notifications Function,
+MongoDB payment history, Redis cache, Prometheus/Grafana metrics, Loki/Alloy centralized
+logs, Docker Compose and local Kubernetes, 71 unit tests and full documentation. See
+[docs/delivery-checklist.md](docs/delivery-checklist.md) and [docs/final-report.md](docs/final-report.md).

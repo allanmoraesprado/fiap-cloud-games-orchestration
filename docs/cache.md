@@ -88,6 +88,7 @@ log → `docker compose start redis` → MISS, then HIT again.
 
 ## Out of scope (by design)
 
-No cache for UsersAPI/PaymentsAPI, no write-through, no Redis persistence, no cluster/sentinel,
-no Prometheus counters yet (hit/miss counters arrive with the observability milestone,
-P3-M5), no Redis on Kubernetes yet (P3-M7).
+No cache for UsersAPI/PaymentsAPI, no write-through, no Redis persistence, no cluster/sentinel.
+Hit/miss/bypass and invalidation counters are exported to Prometheus
+(`fcg_cache_requests_total`, `fcg_cache_invalidations_total`, see [observability.md](observability.md));
+on Kubernetes Redis runs from `k8s/redis.yaml` with the same settings in the CatalogAPI ConfigMap.

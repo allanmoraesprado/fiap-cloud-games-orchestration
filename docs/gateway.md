@@ -18,7 +18,7 @@ clients should call the platform through the gateway.
 | UsersAPI (direct) | `http://localhost:8080/swagger` | Swagger UI + dev access |
 | CatalogAPI (direct) | `http://localhost:8082/swagger` | Swagger UI + dev access |
 | PaymentsAPI (direct) | `http://localhost:8083/swagger` | Swagger UI + dev access (since P3-M4) |
-| NotificationsAPI (direct, Phase 2 legacy) | `http://localhost:8081/health` | Still in Compose until the Notifications Function is wired in |
+| Notifications Function | `docker compose logs notifications-function` | Kafka-triggered, no HTTP API; Phase 2 NotificationsAPI only under the `phase2-legacy` profile |
 
 Swagger is **not** routed through Kong (`http://localhost:8000/swagger` → 404 `no Route matched`).
 
