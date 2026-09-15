@@ -1,0 +1,43 @@
+# ------------------------------------------------------------------
+# FIAP Cloud Games - Grafana Loki (Phase 3 / P3-M6)
+# Single-binary Loki with local filesystem storage and no authentication:
+# a local demo log store. No persistent volume (logs live as long as the
+# container), no multi-tenancy, no alerting rules.
+# ------------------------------------------------------------------
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  allow_structured_metadata: true
+  # Alloy tails containers that may have been running for a while; accept older lines.
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+analytics:
+  reporting_enabled: false

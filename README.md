@@ -12,8 +12,8 @@ This repository is the **orchestration** repo of a six-repository solution:
 | `fiap-cloud-games-users-api` | Identity: register, login, JWT, roles |
 | `fiap-cloud-games-catalog-api` | Games, library, purchase orchestration |
 | `fiap-cloud-games-payments-api` | Simulated payment processing |
-| `fiap-cloud-games-notifications-api` | Console "e-mail" notifications (Phase 2; replaced by the function in Phase 3) |
-| `fiap-cloud-games-notifications-function` | **Phase 3**: Kafka-triggered Azure Function (serverless notifications, run with `func start`) |
+| `fiap-cloud-games-notifications-api` | Console "e-mail" notifications (Phase 2 history; in Compose only under the `phase2-legacy` profile) |
+| `fiap-cloud-games-notifications-function` | **Phase 3**: Kafka-triggered Azure Function (serverless notifications; compose service `notifications-function`, or `func start` for development) |
 | **`fiap-cloud-games-orchestration`** | **Infra + gateway + full compose + docs (this repo)** |
 
 The complete system runs on **Docker Compose** and on **local Kubernetes**
@@ -29,7 +29,7 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 | [docs/gateway.md](docs/gateway.md) | **Phase 3** Kong API Gateway: routes, JWT at the edge, rate limit, correlation id, metrics, curl examples |
 | [docs/cache.md](docs/cache.md) | **Phase 3** Redis distributed cache (CatalogAPI): strategy, keys, TTLs, invalidation, HIT/MISS demo |
 | [docs/nosql.md](docs/nosql.md) | **Phase 3** MongoDB (PaymentsAPI): payment history document, idempotent upsert, payment-status query through Kong |
-| [docs/observability.md](docs/observability.md) | **Phase 3** Prometheus + Grafana: scraped targets, metrics per service, FCG Overview dashboard, validation |
+| [docs/observability.md](docs/observability.md) | **Phase 3** Prometheus + Grafana metrics and Loki + Alloy centralized logs: targets, metrics per service, dashboards, LogQL, validation |
 | [docs/event-flows.md](docs/event-flows.md) | Registration & purchase sequence diagrams, topics, consumer groups, idempotency |
 | [contracts/README.md](contracts/README.md) | Canonical event contracts (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`) |
 | [docs/testing.md](docs/testing.md) | Unit tests (37) + validated Compose/Kubernetes evidence |
@@ -59,11 +59,16 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 - **MongoDB 7** — Phase 3 NoSQL database of PaymentsAPI: payment history in
   `fcg_payments.payments` (one document per order, idempotent upsert) and the protected
   `GET /api/payments/order/{orderId}` query. Details in [docs/nosql.md](docs/nosql.md).
-- **Prometheus + Grafana** — Phase 3 observability: `/metrics` on the three APIs
-  (prometheus-net, HTTP + domain counters), Kong metrics, Prometheus with static targets and a
-  Grafana provisioned automatically with the **FCG Overview** dashboard
-  (`observability/`). Centralized logs (Loki + Alloy) follow in P3-M6. Details in
+- **Prometheus + Grafana** — Phase 3 metrics: `/metrics` on the three APIs (prometheus-net,
+  HTTP + domain counters), Kong metrics, Prometheus with static targets and a Grafana
+  provisioned automatically with the **FCG Overview** dashboard (`observability/`).
+- **Loki + Grafana Alloy** — Phase 3 centralized logs: Alloy tails every compose container
+  through the Docker socket and ships to Loki; the **FCG Logs** dashboard filters by service,
+  traces an order by `OrderId` and shows the Notifications Function e-mails. Details in
   [docs/observability.md](docs/observability.md).
+- **Notifications Function in Compose** — the Kafka-triggered Azure Function runs as the
+  `notifications-function` service (group `notifications-function`); the Phase 2
+  `notifications-api` is kept only under the `phase2-legacy` profile.
 
 Single-broker, RF 1, single-partition are deliberate **MVP** choices.
 
@@ -72,15 +77,16 @@ Single-broker, RF 1, single-partition are deliberate **MVP** choices.
 ## Prerequisites
 
 - Docker Desktop (Docker Engine running) + Docker Compose v2.
-- **The four service repos must be cloned as siblings of this repo** (same parent
-  folder), because the compose build contexts point at `../fiap-cloud-games-*`:
+- **The service repos must be cloned as siblings of this repo** (same parent folder),
+  because the compose build contexts point at `../fiap-cloud-games-*`:
   ```
   <parent>/
   ├── fiap-cloud-games-users-api
   ├── fiap-cloud-games-catalog-api
   ├── fiap-cloud-games-payments-api
-  ├── fiap-cloud-games-notifications-api
-  └── fiap-cloud-games-orchestration   (this repo)
+  ├── fiap-cloud-games-notifications-function   (Phase 3 notifications)
+  ├── fiap-cloud-games-notifications-api        (Phase 2 history; only for the phase2-legacy profile)
+  └── fiap-cloud-games-orchestration            (this repo)
   ```
 
 ---
@@ -89,10 +95,12 @@ Single-broker, RF 1, single-partition are deliberate **MVP** choices.
 
 ```bash
 cp .env.example .env          # optional; compose has safe defaults
-docker compose up -d --build  # builds the 4 service images + starts everything
+docker compose up -d --build  # builds the 3 API images + the function image, starts everything
 ```
 
 `kafka-init` is a one-shot job that creates the topics and exits `0` — expected.
+The Phase 2 `notifications-api` is not started by default; `docker compose --profile phase2-legacy up -d`
+adds it (stop `notifications-function` first to avoid two notification consumers).
 
 ### Host ports
 
@@ -112,7 +120,8 @@ the same value.
 | `KAFKA_HOST_PORT` | 29092 | `NOTIFICATIONS_API_HOST_PORT` | 8081 |
 | `KONG_PROXY_PORT` | 8000 | `KONG_ADMIN_PORT` | 8001 |
 | `KONG_STATUS_PORT` | 8100 | `PROMETHEUS_HOST_PORT` | 9090 |
-| `GRAFANA_HOST_PORT` | 3000 | | |
+| `GRAFANA_HOST_PORT` | 3000 | `LOKI_HOST_PORT` | 3100 |
+| `ALLOY_HOST_PORT` | 12345 (localhost only) | | |
 
 Stop:
 ```bash
@@ -128,12 +137,14 @@ docker compose down -v        # also removes the volume (forces DB re-init)
 | Kong Admin / Status | http://127.0.0.1:8001 · http://127.0.0.1:8100/metrics | localhost only; inspection + Prometheus metrics |
 | UsersAPI (direct) | http://localhost:8080/swagger | Swagger + dev only |
 | CatalogAPI (direct) | http://localhost:8082/swagger | Swagger + dev only |
-| NotificationsAPI (direct) | http://localhost:8081/health | Phase 2 legacy consumer (see logs) |
+| Notifications Function | `docker compose logs -f notifications-function` (or Grafana → FCG Logs) | serverless consumer, no HTTP API |
+| NotificationsAPI (direct) | http://localhost:8081/health | Phase 2 legacy; only with `--profile phase2-legacy` |
 | PaymentsAPI (direct) | http://localhost:8083/swagger | Swagger + dev only; payment history query |
 | Redis (direct) | `localhost:6379` (`REDIS_HOST_PORT`) | cache inspection with `redis-cli` (see [docs/cache.md](docs/cache.md)) |
 | MongoDB (direct) | `localhost:27017` (`MONGO_HOST_PORT`) | `fcg_payments` inspection with `mongosh` (see [docs/nosql.md](docs/nosql.md)) |
-| **Grafana** | http://localhost:3000 | `admin` / `admin` (dev placeholders); dashboard **FCG → FCG Overview** (see [docs/observability.md](docs/observability.md)) |
+| **Grafana** | http://localhost:3000 | `admin` / `admin` (dev placeholders); dashboards **FCG Overview** (metrics) and **FCG Logs** (logs) (see [docs/observability.md](docs/observability.md)) |
 | Prometheus | http://localhost:9090 | targets: users-api, catalog-api, payments-api, kong |
+| Loki / Alloy | http://localhost:3100 (API) · http://127.0.0.1:12345 (Alloy UI) | centralized logs; query them in Grafana |
 | API metrics (direct) | http://localhost:8080/metrics · :8082/metrics · :8083/metrics | prometheus-net, not routed by Kong |
 
 Swagger UI is served by the services on their direct ports only (not through Kong).
@@ -144,7 +155,7 @@ URLs above use the default host ports; adjust if you changed them in `.env`.
 ## Demo flow (through the gateway)
 
 1. `POST http://localhost:8000/api/auth/register` → 201 (public route) → **welcome e-mail**
-   in `docker compose logs notifications-api` (or in the Notifications Function terminal).
+   in `docker compose logs notifications-function` (and in Grafana → FCG Logs).
 2. `POST http://localhost:8000/api/auth/login` → copy the token (public route).
 3. `GET http://localhost:8000/api/games` **without** token → **401** from Kong; **with** the
    token → 200 (Kong validates the JWT at the edge, then CatalogAPI validates it again).
@@ -157,7 +168,10 @@ URLs above use the default host ports; adjust if you changed them in `.env`.
 7. Burst 12 calls to `GET /api/games` → **429** after the 5th (rate limit, see [docs/gateway.md](docs/gateway.md)).
 8. Open Grafana (`http://localhost:3000`, `admin`/`admin`) → **FCG Overview**: request rates,
    Kong routes and 401/429, cache HIT/MISS, payment decisions and queries, Kafka events.
-9. Watch the chain: `docker compose logs -f kong users-api catalog-api payments-api notifications-api`.
+9. Grafana → **FCG Logs**: paste the `orderId` in the text box to follow the order across
+   CatalogAPI → PaymentsAPI → Notifications Function; the e-mail panel shows
+   `[WELCOME EMAIL]` and `[PURCHASE CONFIRMATION]`.
+10. Watch the chain: `docker compose logs -f kong users-api catalog-api payments-api notifications-function`.
 
 The same calls work on the direct ports (8080/8082) for development.
 
@@ -177,7 +191,10 @@ docker compose exec postgres psql -U fcg -d postgres -c "\l"
 # event flow + consumer groups (LAG 0)
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic fcg.payments.processed --from-beginning --timeout-ms 5000
 docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group catalog-service
-docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group notifications-service
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group notifications-function
+
+# centralized logs
+curl -s http://localhost:3100/loki/api/v1/label/compose_service/values
 ```
 
 > **Windows note:** run the `docker compose exec kafka ...` commands from
@@ -242,7 +259,8 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 | `users-api` | `ConnectionStrings__Postgres` → `fcg_users` · `Jwt__SecretKey/Issuer/Audience` · `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` |
 | `catalog-api` | `ConnectionStrings__Postgres` → `fcg_catalog` · `Jwt__SecretKey/Issuer/Audience` · `Kafka__BootstrapServers` · `Kafka__OrderPlacedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__PaymentsConsumerGroup` · `Redis__Enabled` · `Redis__ConnectionString` · `Redis__DefaultTtlSeconds` · `Redis__ExposeOutcomeHeader` |
 | `payments-api` | `Kafka__BootstrapServers` · `Kafka__OrderPlacedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` · `Payment__RejectAboveAmount` · `Mongo__ConnectionString` → `fcg_payments` · `Mongo__DatabaseName` · `Mongo__PaymentsCollectionName` · `Jwt__SecretKey/Issuer/Audience` |
-| `notifications-api` | `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` |
+| `notifications-function` | `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` (= `notifications-function`) · `AzureWebJobsStorage` (local placeholder) |
+| `notifications-api` (legacy profile) | `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` |
 
 - **In-network names:** services use `kafka:9092`, `postgres:5432`, `redis:6379` and `mongo:27017` (never `localhost`).
 - **Kubernetes:** a shared `fcg-config` (JWT issuer/audience, Kafka bootstrap) + a shared `fcg-secret` (JWT key, Postgres password) + a per-service ConfigMap; the DB password is injected from the Secret and never duplicated.
@@ -262,11 +280,11 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 
 ```
 fiap-cloud-games-orchestration/
-├── docker-compose.yml          # postgres + kafka + kafka-init + redis + mongo + 4 services + kong + prometheus + grafana
+├── docker-compose.yml          # postgres + kafka + kafka-init + redis + mongo + 3 APIs + notifications-function + kong + prometheus + grafana + loki + alloy (+ notifications-api under the phase2-legacy profile)
 ├── .env.example                # config template (placeholders + host ports)
 ├── .gitignore · README.md
 ├── gateway/kong.yml            # Kong DB-less declarative config (routes, JWT, plugins)
-├── observability/              # prometheus/prometheus.yml · grafana/provisioning (datasource, dashboards) · grafana/dashboards/fcg-overview.json
+├── observability/              # prometheus/prometheus.yml · loki/loki.yml · alloy/config.alloy · grafana/provisioning (datasources, dashboards) · grafana/dashboards/*.json
 ├── db/init/01-create-databases.sql   # creates fcg_users + fcg_catalog
 ├── k8s/                        # shared infra manifests + build/apply scripts
 │   ├── namespace.yaml · shared-config.yaml · shared-secret.yaml
@@ -284,7 +302,7 @@ Phase 2 is **delivery-ready** (tag `phase-2`): four event-driven microservices o
 running via Docker Compose and on local Kubernetes, with per-service databases, a shared
 JWT, unit tests, and full documentation. See [docs/delivery-checklist.md](docs/delivery-checklist.md).
 
-**Phase 3 in progress:** P3-M1 Notifications Function (own repository, `func start`),
-P3-M2 Kong API Gateway (this repo, Compose), P3-M3 Redis cache + host-port parameterization,
-P3-M4 MongoDB payment history and P3-M5 Prometheus + Grafana metrics are done. Next: Loki +
-Alloy centralized logs (P3-M6), Kubernetes updates and final docs.
+**Phase 3 in progress:** P3-M1 Notifications Function (own repository), P3-M2 Kong API
+Gateway, P3-M3 Redis cache + host-port parameterization, P3-M4 MongoDB payment history,
+P3-M5 Prometheus + Grafana metrics and P3-M6 Loki + Alloy centralized logs (with the function
+wired into Compose) are done. Next: Kubernetes updates (P3-M7) and final docs (P3-M8).

@@ -144,9 +144,9 @@ To apply a change to `gateway/kong.yml`: `docker compose restart kong` (or `dock
 
 - `/api/payments/*` serves the payment-status query since **P3-M4** (PaymentsAPI + MongoDB);
   PaymentsAPI validates the JWT again and enforces owner/Admin access.
-- The Phase 2 `notifications-api` container is still in Compose; the Notifications Function
-  (`fiap-cloud-games-notifications-function`, run with `func start`) replaces it when the
-  Compose profile / Kubernetes wiring lands in later milestones.
+- Since P3-M6 the Notifications Function runs as the compose service `notifications-function`
+  (main Phase 3 path); the Phase 2 `notifications-api` stays only under the `phase2-legacy`
+  compose profile.
 - Rate limiting uses the `local` policy (per Kong node). A shared policy (Redis) is not needed
   for a single local node.
 - Kong on **Kubernetes** (DB-less Deployment + ConfigMap + NodePort) comes in **P3-M7**;

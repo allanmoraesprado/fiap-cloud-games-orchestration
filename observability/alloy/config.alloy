@@ -1,0 +1,59 @@
+// ------------------------------------------------------------------
+// FIAP Cloud Games - Grafana Alloy (Phase 3 / P3-M6)
+// Collects the stdout/stderr of every container of THIS compose project
+// through the Docker API (socket mounted read-only) and ships them to Loki.
+// No host/system logs are collected; Kubernetes collection is out of scope here.
+// ------------------------------------------------------------------
+
+// 1) Discover running containers via the Docker socket.
+discovery.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "5s"
+}
+
+// 2) Keep only this compose project and derive readable, low-cardinality labels.
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  // Only containers created by the fcg-orchestration compose project.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    regex         = "fcg-orchestration"
+    action        = "keep"
+  }
+
+  // compose_service = the service name in docker-compose.yml (users-api, kong, ...).
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "compose_service"
+  }
+
+  // job = fcg/<service>; container_name without the leading slash.
+  // (The Docker discovery exposes no image-name meta label, so no image label is set.)
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "job"
+    replacement   = "fcg/$1"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container_name"
+  }
+}
+
+// 3) Tail the container logs (stdout + stderr) through the Docker API.
+loki.source.docker "containers" {
+  host             = "unix:///var/run/docker.sock"
+  targets          = discovery.relabel.containers.output
+  labels           = { platform = "fcg" }
+  refresh_interval = "5s"
+  forward_to       = [loki.write.default.receiver]
+}
+
+// 4) Push to Loki on the compose network.
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

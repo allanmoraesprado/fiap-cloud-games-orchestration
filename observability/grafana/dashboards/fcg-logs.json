@@ -1,0 +1,94 @@
+{
+  "uid": "fcg-logs",
+  "title": "FCG Logs",
+  "description": "FIAP Cloud Games - Phase 3 centralized logs (Loki + Alloy): filter by service, trace an order by OrderId, notification e-mails.",
+  "tags": ["fcg", "phase-3", "logs"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-30m", "to": "now" },
+  "annotations": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "name": "service", "label": "Service (compose_service)", "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "label": "compose_service", "refId": "LokiVariableQueryEditor-VariableQuery", "stream": "", "type": 1 },
+        "definition": "label_values(compose_service)",
+        "refresh": 2, "includeAll": true, "multi": true, "allValue": ".*",
+        "current": { "selected": true, "text": ["All"], "value": ["$__all"] },
+        "options": [], "sort": 1
+      },
+      {
+        "name": "orderId", "label": "OrderId (substring)", "type": "textbox",
+        "query": "", "current": { "selected": false, "text": "", "value": "" }, "options": []
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "Log volume by service (lines / minute)",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range",
+          "expr": "sum by (compose_service) (count_over_time({platform=\"fcg\", compose_service=~\"$service\"}[1m]))", "legendFormat": "{{compose_service}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 40, "lineWidth": 1 } }, "overrides": [] },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 2, "type": "logs", "title": "Trace an order across services (OrderId = \"$orderId\")",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 7 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range",
+          "expr": "{platform=\"fcg\", compose_service=~\"catalog-api|payments-api|notifications-function\"} |= \"$orderId\"" }
+      ],
+      "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" }
+    },
+    {
+      "id": 3, "type": "logs", "title": "Notification e-mails (Notifications Function): [WELCOME EMAIL] and [PURCHASE CONFIRMATION]",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 17 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range",
+          "expr": "{compose_service=\"notifications-function\"} |~ \"WELCOME EMAIL|PURCHASE CONFIRMATION|no confirmation e-mail\"" }
+      ],
+      "options": { "showTime": true, "showLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" }
+    },
+    {
+      "id": 4, "type": "logs", "title": "Warnings and errors (APIs + function)",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 17 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range",
+          "expr": "{compose_service=~\"users-api|catalog-api|payments-api|notifications-function\"} |~ \"\\\\[(WRN|ERR)\\\\]|warn:|fail:|Exception\"" }
+      ],
+      "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" }
+    },
+    {
+      "id": 5, "type": "logs", "title": "Kong access log",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 27 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range",
+          "expr": "{compose_service=\"kong\"} |= \"/api/\"" }
+      ],
+      "options": { "showTime": true, "showLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" }
+    },
+    {
+      "id": 6, "type": "logs", "title": "All logs for the selected services",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 27 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "loki", "uid": "loki" }, "queryType": "range",
+          "expr": "{platform=\"fcg\", compose_service=~\"$service\"}" }
+      ],
+      "options": { "showTime": true, "showLabels": true, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "dedupStrategy": "none", "sortOrder": "Descending" }
+    }
+  ]
+}

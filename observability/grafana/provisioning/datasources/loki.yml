@@ -1,0 +1,13 @@
+# Grafana datasource provisioning (Phase 3 / P3-M6): Loki on the compose network.
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: false
+    jsonData:
+      maxLines: 1000

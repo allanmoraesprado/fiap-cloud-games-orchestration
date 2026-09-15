@@ -6,19 +6,22 @@ name: fcg-orchestration
 # (KRaft, no Zookeeper) + topic init, plus the four microservices (Phase 2),
 # the Kong API Gateway (Phase 3 / P3-M2, DB-less, ./gateway/kong.yml),
 # Redis (Phase 3 / P3-M3, distributed cache for the CatalogAPI read model),
-# MongoDB (Phase 3 / P3-M4, NoSQL payment history for PaymentsAPI) and
-# Prometheus + Grafana (Phase 3 / P3-M5, metrics; ./observability).
+# MongoDB (Phase 3 / P3-M4, NoSQL payment history for PaymentsAPI),
+# Prometheus + Grafana (Phase 3 / P3-M5, metrics; ./observability),
+# Loki + Grafana Alloy (Phase 3 / P3-M6, centralized container logs) and the
+# Notifications Function container (Phase 3 / P3-M6, main notification path).
 # `docker compose up -d --build` runs the complete system.
 #
 # Host ports are parameterized (*_HOST_PORT / KONG_*_PORT in .env.example) so a
 # port already in use on your machine can be remapped without touching the
 # container ports or the in-network DNS names.
 #
-# The four service repos must be cloned as SIBLINGS of this repo:
+# The service repos must be cloned as SIBLINGS of this repo:
 #   ../fiap-cloud-games-users-api
 #   ../fiap-cloud-games-catalog-api
 #   ../fiap-cloud-games-payments-api
-#   ../fiap-cloud-games-notifications-api
+#   ../fiap-cloud-games-notifications-function
+#   ../fiap-cloud-games-notifications-api     (Phase 2 history; profile phase2-legacy only)
 # ------------------------------------------------------------------
 
 services:
@@ -216,7 +219,35 @@ services:
     ports:
       - "${PAYMENTS_API_HOST_PORT:-8083}:8080"
 
+  # ------------------------------------------------------------------
+  # Notifications Function (Phase 3 / P3-M1 + P3-M6): Kafka-triggered Azure
+  # Function (isolated worker) running on the official Functions base image.
+  # Main Phase 3 notification path; consumer group notifications-function on
+  # fcg.users.created and fcg.payments.processed. No HTTP API, no ports; its
+  # logs (stdout) go to Loki through Alloy. `func start` on the host is the
+  # development alternative - never run both against the same Kafka.
+  # ------------------------------------------------------------------
+  notifications-function:
+    build:
+      context: ../fiap-cloud-games-notifications-function
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      # Not used by the Kafka trigger; local placeholder required by the Functions host settings.
+      AzureWebJobsStorage: "UseDevelopmentStorage=true"
+      Kafka__BootstrapServers: kafka:9092
+      Kafka__UserCreatedTopic: fcg.users.created
+      Kafka__PaymentProcessedTopic: fcg.payments.processed
+      Kafka__ConsumerGroup: notifications-function
+
+  # Phase 2 NotificationsAPI, kept as history. NOT started by default (profile
+  # phase2-legacy) so there is a single notification consumer; enable it only with
+  # `docker compose --profile phase2-legacy up -d` and notifications-function stopped.
   notifications-api:
+    profiles: ["phase2-legacy"]
     build:
       context: ../fiap-cloud-games-notifications-api
       dockerfile: Dockerfile
@@ -276,11 +307,12 @@ services:
       start_period: 10s
 
   # ------------------------------------------------------------------
-  # Observability (Phase 3 / P3-M5). Prometheus scrapes the three .NET APIs
-  # (/metrics via prometheus-net) and the Kong Status API (prometheus plugin) over
-  # the compose network; Grafana is provisioned automatically with the Prometheus
-  # datasource and the "FCG Overview" dashboard (./observability/grafana).
-  # Centralized logs (Loki + Alloy) are added in P3-M6. Local/dev credentials only.
+  # Observability (Phase 3 / P3-M5 + P3-M6). Prometheus scrapes the three .NET
+  # APIs (/metrics via prometheus-net) and the Kong Status API (prometheus plugin);
+  # Alloy tails every container of this project through the Docker socket and
+  # ships the logs to Loki; Grafana is provisioned automatically with both
+  # datasources and the "FCG Overview" / "FCG Logs" dashboards (./observability).
+  # Local/dev credentials only; no persistence for metrics or logs.
   # ------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:v3.5.0
@@ -320,12 +352,52 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+      loki:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  # Loki: single-binary log store, filesystem storage, no auth, no volume (demo).
+  loki:
+    image: grafana/loki:3.5.3
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./observability/loki/loki.yml:/etc/loki/loki.yml:ro
+    ports:
+      - "${LOKI_HOST_PORT:-3100}:3100"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
+  # Alloy: discovers the containers of this compose project through the Docker socket
+  # (read-only) and tails their stdout/stderr into Loki. Labels: compose_service, job,
+  # container_name, image, platform. UI on localhost only.
+  alloy:
+    image: grafana/alloy:v1.11.0
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:${ALLOY_HOST_PORT:-12345}:12345"
+    depends_on:
+      loki:
+        condition: service_healthy
+    # No container healthcheck: the alloy image ships neither wget nor curl. Readiness is
+    # visible on http://127.0.0.1:12345/-/ready and in the Alloy UI component graph.
 
 volumes:
   pg_data:
