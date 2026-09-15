@@ -4,12 +4,12 @@ name: fcg-orchestration
 # FIAP Cloud Games - Full local system
 # PostgreSQL (two logical databases) + single-broker Apache Kafka
 # (KRaft, no Zookeeper) + topic init, plus the four microservices (Phase 2),
-# the Kong API Gateway (Phase 3 / P3-M2, DB-less, ./gateway/kong.yml),
-# Redis (Phase 3 / P3-M3, distributed cache for the CatalogAPI read model),
-# MongoDB (Phase 3 / P3-M4, NoSQL payment history for PaymentsAPI),
-# Prometheus + Grafana (Phase 3 / P3-M5, metrics; ./observability),
-# Loki + Grafana Alloy (Phase 3 / P3-M6, centralized container logs) and the
-# Notifications Function container (Phase 3 / P3-M6, main notification path).
+# the Kong API Gateway (Phase 3, DB-less, ./gateway/kong.yml),
+# Redis (Phase 3, distributed cache for the CatalogAPI read model),
+# MongoDB (Phase 3, NoSQL payment history for PaymentsAPI),
+# Prometheus + Grafana (Phase 3, metrics; ./observability),
+# Loki + Grafana Alloy (Phase 3, centralized container logs) and the
+# Notifications Function container (Phase 3, main notification path).
 # `docker compose up -d --build` runs the complete system.
 #
 # Host ports are parameterized (*_HOST_PORT / KONG_*_PORT in .env.example) so a
@@ -99,7 +99,7 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
     restart: "no"
 
-  # Redis 7 (Phase 3 / P3-M3): distributed cache for the CatalogAPI read model
+  # Redis 7 (Phase 3): distributed cache for the CatalogAPI read model
   # (cache-aside, short TTLs). No auth and no persistence: it is a cache only,
   # everything is rebuilt from PostgreSQL. Local-only settings.
   redis:
@@ -115,7 +115,7 @@ services:
       retries: 10
       start_period: 3s
 
-  # MongoDB 7 (Phase 3 / P3-M4): NoSQL persistence for PaymentsAPI
+  # MongoDB 7 (Phase 3): NoSQL persistence for PaymentsAPI
   # (database fcg_payments, collection payments, one document per order).
   # Root credentials are LOCAL/DEV placeholders (see .env.example).
   mongo:
@@ -136,7 +136,7 @@ services:
       start_period: 10s
 
   # ------------------------------------------------------------------
-  # .NET microservices (M6). Images build from the sibling repositories.
+  # .NET microservices (Phase 2). Images build from the sibling repositories.
   # In-network names: kafka:9092, postgres:5432. No container healthchecks
   # (aspnet runtime image has no curl); startup order via depends_on.
   # ------------------------------------------------------------------
@@ -220,7 +220,7 @@ services:
       - "${PAYMENTS_API_HOST_PORT:-8083}:8080"
 
   # ------------------------------------------------------------------
-  # Notifications Function (Phase 3 / P3-M1 + P3-M6): Kafka-triggered Azure
+  # Notifications Function (Phase 3): Kafka-triggered Azure
   # Function (isolated worker) running on the official Functions base image.
   # Main Phase 3 notification path; consumer group notifications-function on
   # fcg.users.created and fcg.payments.processed. No HTTP API, no ports; its
@@ -264,11 +264,11 @@ services:
       - "${NOTIFICATIONS_API_HOST_PORT:-8081}:8080"
 
   # ------------------------------------------------------------------
-  # Kong API Gateway (Phase 3 / P3-M2). DB-less: routes, JWT credential and
+  # Kong API Gateway (Phase 3). DB-less: routes, JWT credential and
   # plugins come from ./gateway/kong.yml. Official external entry point:
   #   proxy   http://localhost:8000   -> users-api / catalog-api / payments-api
   #   admin   http://127.0.0.1:8001   (read-only in DB-less; local inspection)
-  #   status  http://127.0.0.1:8100   (/metrics for Prometheus, later milestone)
+  #   status  http://127.0.0.1:8100   (/metrics scraped by Prometheus)
   # (host ports above are the defaults; see KONG_*_PORT in .env.example)
   # Direct service ports (8080/8082/8083) stay published for Swagger and dev.
   # ------------------------------------------------------------------
@@ -307,7 +307,7 @@ services:
       start_period: 10s
 
   # ------------------------------------------------------------------
-  # Observability (Phase 3 / P3-M5 + P3-M6). Prometheus scrapes the three .NET
+  # Observability (Phase 3). Prometheus scrapes the three .NET
   # APIs (/metrics via prometheus-net) and the Kong Status API (prometheus plugin);
   # Alloy tails every container of this project through the Docker socket and
   # ships the logs to Loki; Grafana is provisioned automatically with both

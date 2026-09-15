@@ -112,7 +112,7 @@ Tear down: `kubectl delete namespace fcg`.
 
 ## Logging decision on Kubernetes
 
-Centralized logs (Loki + Alloy) are implemented and validated on **Docker Compose** (P3-M6).
+Centralized logs (Loki + Alloy) are implemented and validated on **Docker Compose**.
 On Kubernetes, collecting pod logs needs an Alloy **DaemonSet with RBAC** (ClusterRole to list
 pods and read logs through the kubelet) plus a Loki Deployment; that is more infrastructure
 than this local delivery needs, so it is **documented as a future improvement**. On the cluster,

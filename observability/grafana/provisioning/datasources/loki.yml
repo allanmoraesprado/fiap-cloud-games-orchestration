@@ -1,4 +1,4 @@
-# Grafana datasource provisioning (Phase 3 / P3-M6): Loki on the compose network.
+# Grafana datasource provisioning (Phase 3): Loki on the compose network.
 apiVersion: 1
 
 datasources:

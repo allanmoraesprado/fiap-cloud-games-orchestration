@@ -1,9 +1,9 @@
 # ------------------------------------------------------------------
-# FIAP Cloud Games - Prometheus (Phase 3 / P3-M5)
+# FIAP Cloud Games - Prometheus (Phase 3)
 # Static targets on the compose network: the three .NET APIs expose /metrics
 # (prometheus-net) and Kong exposes its prometheus plugin on the Status API.
 # Short scrape interval on purpose: local demo, changes show up in seconds.
-# No Alertmanager, no service discovery (Kubernetes comes in a later milestone).
+# No Alertmanager, no service discovery; the same static targets are reused on Kubernetes.
 # ------------------------------------------------------------------
 global:
   scrape_interval: 5s

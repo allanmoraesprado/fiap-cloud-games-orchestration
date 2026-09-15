@@ -16,7 +16,7 @@ re-executed at the end of Phase 3 (all green, 0 warnings on build):
 
 ## Integration evidence (validated end-to-end)
 
-Every milestone left numbered evidence transcripts; the final state was re-validated with
+The final state was validated end-to-end with
 the smoke script. Both deployment targets exercised the full register → purchase → payment
 query flow **through Kong**.
 

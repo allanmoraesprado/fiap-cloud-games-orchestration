@@ -1,4 +1,4 @@
-# Grafana 12 (Phase 3 / P3-M7), provisioned from files. apply-all creates three
+# Grafana 12 (Phase 3), provisioned from files. apply-all creates three
 # ConfigMaps from ../observability/grafana (shared with Docker Compose):
 #   grafana-datasources        -> /etc/grafana/provisioning/datasources  (Prometheus only)
 #   grafana-dashboard-provider -> /etc/grafana/provisioning/dashboards   (file provider)

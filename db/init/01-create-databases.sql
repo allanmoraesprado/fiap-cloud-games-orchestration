@@ -1,5 +1,5 @@
 -- ------------------------------------------------------------------
--- FIAP Cloud Games - PostgreSQL bootstrap (M0)
+-- FIAP Cloud Games - PostgreSQL bootstrap
 --
 -- Runs automatically the FIRST time the Postgres data volume is
 -- initialized (files in /docker-entrypoint-initdb.d/ are executed by

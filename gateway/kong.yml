@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------
 # FIAP Cloud Games - Kong Gateway declarative configuration (DB-less)
-# Phase 3 / P3-M2. Loaded by the `kong` service in docker-compose.yml
+# Phase 3. Loaded by the `kong` service in docker-compose.yml
 # (KONG_DATABASE=off, KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml).
 #
 # Routing: prefix match with strip_path=false, so every service receives
@@ -17,7 +17,7 @@
 # committed in .env.example / docker-compose.yml defaults / k8s/shared-secret.yaml
 # (JWT__SECRETKEY). It must stay identical to the value the services use. Kong OSS
 # 3.9 does not resolve vault references ({vault://env/...}) in jwt_secrets (the
-# field is not referenceable; verified in P3-M2), so the value is literal here.
+# field is not referenceable), so the value is literal here.
 # Never put a real secret in this file; in production the gateway config would
 # be rendered from a secret store at deploy time.
 # ------------------------------------------------------------------
@@ -71,9 +71,9 @@ services:
               claims_to_verify:
                 - exp
 
-  # ---------------- PaymentsAPI (payment history, P3-M4) ----------------
-  # Reserved for the protected payment-status endpoint added in P3-M4. Until
-  # then Kong validates the JWT and the upstream answers 404 for these paths.
+  # ---------------- PaymentsAPI (payment history) ----------------
+  # Protected payment-status endpoint (GET /api/payments/order/{orderId}). Kong
+  # validates the JWT at the edge; PaymentsAPI validates it again (owner/Admin).
   - name: payments-api
     url: http://payments-api:8080
     routes:
@@ -123,7 +123,7 @@ plugins:
       echo_downstream: true
 
   # Exposes Kong metrics at the Status API (/metrics on port 8100) and the
-  # Admin API (/metrics on port 8001). Scraped by Prometheus in a later milestone.
+  # Admin API (/metrics on port 8001). Scraped by Prometheus (observability/prometheus/prometheus.yml).
   - name: prometheus
     config:
       status_code_metrics: true

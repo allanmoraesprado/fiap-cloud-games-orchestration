@@ -1,4 +1,4 @@
-# Prometheus (Phase 3 / P3-M7). The scrape configuration is NOT duplicated here:
+# Prometheus (Phase 3). The scrape configuration is NOT duplicated here:
 # apply-all creates the ConfigMap `prometheus-config` from
 # ../observability/prometheus/prometheus.yml (shared with Docker Compose). Its static
 # targets (users-api:8080, catalog-api:8080, payments-api:8080, kong:8100) resolve to

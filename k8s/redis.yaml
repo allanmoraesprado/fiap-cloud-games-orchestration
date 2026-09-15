@@ -1,4 +1,4 @@
-# Redis 7 (Phase 3 / P3-M7): distributed cache for the CatalogAPI read model.
+# Redis 7 (Phase 3): distributed cache for the CatalogAPI read model.
 # Cache only: no persistence, no auth (local-only), one replica, ephemeral storage.
 apiVersion: apps/v1
 kind: Deployment

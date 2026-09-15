@@ -1,5 +1,5 @@
 // ------------------------------------------------------------------
-// FIAP Cloud Games - Grafana Alloy (Phase 3 / P3-M6)
+// FIAP Cloud Games - Grafana Alloy (Phase 3)
 // Collects the stdout/stderr of every container of THIS compose project
 // through the Docker API (socket mounted read-only) and ships them to Loki.
 // No host/system logs are collected; Kubernetes collection is out of scope here.

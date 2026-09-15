@@ -1,4 +1,4 @@
-# Grafana dashboard provisioning (Phase 3 / P3-M5): loads every JSON under
+# Grafana dashboard provisioning (Phase 3): loads every JSON under
 # observability/grafana/dashboards (mounted at /var/lib/grafana/dashboards).
 apiVersion: 1
 

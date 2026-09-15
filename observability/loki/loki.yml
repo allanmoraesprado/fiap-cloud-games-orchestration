@@ -1,5 +1,5 @@
 # ------------------------------------------------------------------
-# FIAP Cloud Games - Grafana Loki (Phase 3 / P3-M6)
+# FIAP Cloud Games - Grafana Loki (Phase 3)
 # Single-binary Loki with local filesystem storage and no authentication:
 # a local demo log store. No persistent volume (logs live as long as the
 # container), no multi-tenancy, no alerting rules.

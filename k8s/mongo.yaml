@@ -1,4 +1,4 @@
-# MongoDB 7 (Phase 3 / P3-M7): NoSQL payment history for PaymentsAPI
+# MongoDB 7 (Phase 3): NoSQL payment history for PaymentsAPI
 # (database fcg_payments, collection payments). Root credentials come from the
 # shared Secret (LOCAL/DEV PLACEHOLDERS). Ephemeral storage (emptyDir) for this
 # local MVP: documents are recreated by the purchase flow on pod restart.

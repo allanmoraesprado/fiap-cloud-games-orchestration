@@ -1,6 +1,6 @@
 # FIAP Cloud Games — Tech Challenge Phase 3 — Final Delivery Report
 
-> Draft prepared at the end of P3-M8. Replace every `<placeholder>` before submitting.
+> Replace every `<placeholder>` before submitting.
 
 | Item | Value |
 |---|---|

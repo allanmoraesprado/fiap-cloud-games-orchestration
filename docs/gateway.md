@@ -14,10 +14,10 @@ clients should call the platform through the gateway.
 |---|---|---|
 | **Gateway proxy** | `http://localhost:8000` | Official entry point for `/api/*` |
 | Gateway Admin API | `http://127.0.0.1:8001` | Bound to localhost; read-only in DB-less (inspection: `/routes`, `/plugins`, `/consumers`) |
-| Gateway Status API | `http://127.0.0.1:8100/metrics` | Prometheus metrics (scraped by Prometheus since P3-M5, see [observability.md](observability.md)) |
+| Gateway Status API | `http://127.0.0.1:8100/metrics` | Prometheus metrics (scraped by Prometheus, see [observability.md](observability.md)) |
 | UsersAPI (direct) | `http://localhost:8080/swagger` | Swagger UI + dev access |
 | CatalogAPI (direct) | `http://localhost:8082/swagger` | Swagger UI + dev access |
-| PaymentsAPI (direct) | `http://localhost:8083/swagger` | Swagger UI + dev access (since P3-M4) |
+| PaymentsAPI (direct) | `http://localhost:8083/swagger` | Swagger UI + dev access |
 | Notifications Function | `docker compose logs notifications-function` | Kafka-triggered, no HTTP API; Phase 2 NotificationsAPI only under the `phase2-legacy` profile |
 
 Swagger is **not** routed through Kong (`http://localhost:8000/swagger` → 404 `no Route matched`).
@@ -122,8 +122,8 @@ The window resets after one second, so the demo does not block the rest of the f
 ### Correlation id and metrics
 
 - Every response through Kong carries `X-Correlation-ID: <uuid>`; the same header is forwarded
-  to the upstream service. The services do not log it yet (candidate for the observability
-  milestone).
+  to the upstream service. The services do not log it yet (candidate for a future
+  improvement).
 - `curl http://127.0.0.1:8100/metrics | grep kong_http_requests_total` shows requests per
   service/route/status code, e.g. `code="401",source="kong"` (rejected at the edge) vs
   `code="200",source="service"`.
@@ -140,21 +140,21 @@ docker run --rm -e KONG_DATABASE=off -v "$PWD/gateway/kong.yml:/kong/declarative
 
 To apply a change to `gateway/kong.yml`: `docker compose restart kong` (or `docker compose up -d kong`).
 
-## Limitations and what remains for later milestones
+## Limitations and notes
 
-- `/api/payments/*` serves the payment-status query since **P3-M4** (PaymentsAPI + MongoDB);
+- `/api/payments/*` serves the payment-status query (PaymentsAPI + MongoDB);
   PaymentsAPI validates the JWT again and enforces owner/Admin access.
-- Since P3-M6 the Notifications Function runs as the compose service `notifications-function`
+- The Notifications Function runs as the compose service `notifications-function`
   (main Phase 3 path); the Phase 2 `notifications-api` stays only under the `phase2-legacy`
   compose profile.
 - Rate limiting uses the `local` policy (per Kong node). A shared policy (Redis) is not needed
   for a single local node.
-- Kong on **Kubernetes** (since P3-M7): DB-less Deployment, ConfigMap generated from this same
+- Kong on **Kubernetes**: DB-less Deployment, ConfigMap generated from this same
   `gateway/kong.yml`, NodePort **30080** as the entry point (`k8s/kong.yaml`, see
   [kubernetes.md](kubernetes.md)); `kong_*` metrics are scraped by Prometheus and shown in Grafana
-  since **P3-M5**; centralized logs in **P3-M6** (Compose).
+  (see [observability.md](observability.md)); centralized logs are collected on Compose only.
 - Host ports (including `KONG_PROXY_PORT`, `KONG_ADMIN_PORT`, `KONG_STATUS_PORT`) are
-  parameterized in `.env` since **P3-M3**; the URLs in this page use the defaults.
+  parameterized in `.env`; the URLs in this page use the defaults.
 - Startup: Kong is healthy before the .NET services finish booting (they have no container
   healthcheck); the first proxied calls may get a transient **503** for a few seconds.
 
