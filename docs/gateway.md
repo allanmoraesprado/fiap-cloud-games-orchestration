@@ -151,8 +151,8 @@ To apply a change to `gateway/kong.yml`: `docker compose restart kong` (or `dock
   for a single local node.
 - Kong on **Kubernetes** (DB-less Deployment + ConfigMap + NodePort) comes in **P3-M7**;
   Prometheus/Grafana scraping of `kong_*` metrics in **P3-M5**; centralized logs in **P3-M6**.
-- Host-port parametrization for Postgres/Redis (to avoid local port clashes) is planned for
-  **P3-M3**, together with Redis.
+- Host ports (including `KONG_PROXY_PORT`, `KONG_ADMIN_PORT`, `KONG_STATUS_PORT`) are
+  parameterized in `.env` since **P3-M3**; the URLs in this page use the defaults.
 - Startup: Kong is healthy before the .NET services finish booting (they have no container
   healthcheck); the first proxied calls may get a transient **503** for a few seconds.
 

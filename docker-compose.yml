@@ -3,9 +3,14 @@ name: fcg-orchestration
 # ------------------------------------------------------------------
 # FIAP Cloud Games - Full local system
 # PostgreSQL (two logical databases) + single-broker Apache Kafka
-# (KRaft, no Zookeeper) + topic init, plus the four microservices (Phase 2)
-# and the Kong API Gateway (Phase 3 / P3-M2, DB-less, ./gateway/kong.yml).
+# (KRaft, no Zookeeper) + topic init, plus the four microservices (Phase 2),
+# the Kong API Gateway (Phase 3 / P3-M2, DB-less, ./gateway/kong.yml) and
+# Redis (Phase 3 / P3-M3, distributed cache for the CatalogAPI read model).
 # `docker compose up -d --build` runs the complete system.
+#
+# Host ports are parameterized (*_HOST_PORT / KONG_*_PORT in .env.example) so a
+# port already in use on your machine can be remapped without touching the
+# container ports or the in-network DNS names.
 #
 # The four service repos must be cloned as SIBLINGS of this repo:
 #   ../fiap-cloud-games-users-api
@@ -23,7 +28,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fcg}
       POSTGRES_DB: ${POSTGRES_DB:-fcg}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
@@ -38,8 +43,9 @@ services:
     image: apache/kafka:3.9.0
     restart: unless-stopped
     ports:
-      # Host access for services running on the host during development.
-      - "29092:29092"
+      # Host access for services running on the host during development. The advertised
+      # host listener below must use the same port, so KAFKA_HOST_PORT drives both.
+      - "${KAFKA_HOST_PORT:-29092}:29092"
     environment:
       # --- KRaft single-node (combined broker + controller) ---
       KAFKA_NODE_ID: 1
@@ -51,7 +57,7 @@ services:
       # PLAINTEXT      -> internal docker-network clients (advertised as kafka:9092)
       # PLAINTEXT_HOST -> host machine clients            (advertised as localhost:29092)
       KAFKA_LISTENERS: CONTROLLER://:9093,PLAINTEXT://:9092,PLAINTEXT_HOST://:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:${KAFKA_HOST_PORT:-29092}
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       # --- Single-broker safe defaults ---
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -88,6 +94,22 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
     restart: "no"
 
+  # Redis 7 (Phase 3 / P3-M3): distributed cache for the CatalogAPI read model
+  # (cache-aside, short TTLs). No auth and no persistence: it is a cache only,
+  # everything is rebuilt from PostgreSQL. Local-only settings.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 3s
+
   # ------------------------------------------------------------------
   # .NET microservices (M6). Images build from the sibling repositories.
   # In-network names: kafka:9092, postgres:5432. No container healthchecks
@@ -112,7 +134,7 @@ services:
       Kafka__BootstrapServers: kafka:9092
       Kafka__UserCreatedTopic: fcg.users.created
     ports:
-      - "8080:8080"
+      - "${USERS_API_HOST_PORT:-8080}:8080"
 
   catalog-api:
     build:
@@ -121,6 +143,8 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
@@ -134,8 +158,14 @@ services:
       Kafka__OrderPlacedTopic: fcg.orders.placed
       Kafka__PaymentProcessedTopic: fcg.payments.processed
       Kafka__PaymentsConsumerGroup: catalog-service
+      # Redis distributed cache (Phase 3): cache-aside for GET /api/games, /api/games/{id}
+      # and the library listings; falls back to PostgreSQL if Redis is unavailable.
+      Redis__Enabled: "true"
+      Redis__ConnectionString: "redis:6379,abortConnect=false,connectTimeout=1000,syncTimeout=1000"
+      Redis__DefaultTtlSeconds: "60"
+      Redis__ExposeOutcomeHeader: "true"
     ports:
-      - "8082:8080"
+      - "${CATALOG_API_HOST_PORT:-8082}:8080"
 
   payments-api:
     build:
@@ -152,7 +182,7 @@ services:
       Kafka__ConsumerGroup: payments-service
       Payment__RejectAboveAmount: "1000"
     ports:
-      - "8083:8080"
+      - "${PAYMENTS_API_HOST_PORT:-8083}:8080"
 
   notifications-api:
     build:
@@ -168,7 +198,7 @@ services:
       Kafka__PaymentProcessedTopic: fcg.payments.processed
       Kafka__ConsumerGroup: notifications-service
     ports:
-      - "8081:8080"
+      - "${NOTIFICATIONS_API_HOST_PORT:-8081}:8080"
 
   # ------------------------------------------------------------------
   # Kong API Gateway (Phase 3 / P3-M2). DB-less: routes, JWT credential and
@@ -176,6 +206,7 @@ services:
   #   proxy   http://localhost:8000   -> users-api / catalog-api / payments-api
   #   admin   http://127.0.0.1:8001   (read-only in DB-less; local inspection)
   #   status  http://127.0.0.1:8100   (/metrics for Prometheus, later milestone)
+  # (host ports above are the defaults; see KONG_*_PORT in .env.example)
   # Direct service ports (8080/8082/8083) stay published for Swagger and dev.
   # ------------------------------------------------------------------
   kong:
@@ -202,9 +233,9 @@ services:
     volumes:
       - ./gateway/kong.yml:/kong/declarative/kong.yml:ro
     ports:
-      - "8000:8000"
-      - "127.0.0.1:8001:8001"
-      - "127.0.0.1:8100:8100"
+      - "${KONG_PROXY_PORT:-8000}:8000"
+      - "127.0.0.1:${KONG_ADMIN_PORT:-8001}:8001"
+      - "127.0.0.1:${KONG_STATUS_PORT:-8100}:8100"
     healthcheck:
       test: ["CMD", "kong", "health"]
       interval: 10s
