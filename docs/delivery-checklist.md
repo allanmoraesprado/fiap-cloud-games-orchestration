@@ -73,7 +73,7 @@ Requirement → where it is satisfied → evidence. Phase 2 items remain valid (
 
 ## Repositories
 - [x] `fiap-cloud-games-users-api`, `fiap-cloud-games-catalog-api`, `fiap-cloud-games-payments-api`, `fiap-cloud-games-notifications-function`, `fiap-cloud-games-orchestration` (+ `fiap-cloud-games-notifications-api` as Phase 2 history)
-- [x] Tag `phase-2` on all repositories; tag `phase-3` to be created after the final commit/push ([`final-report.md`](final-report.md))
+- [x] Delivery = final commits pushed to `main` in every repository. Git tags were not required for the academic delivery and were not used in previous phases; creating a `phase-3` tag is optional and can be done later only as a versioning convenience (the `phase-2` tag exists from the Phase 3 kick-off, see [`final-report.md`](final-report.md))
 
 ## Video and final report
 - [ ] Video recorded following [`demo-script.md`](demo-script.md) (12–15 min) — link in [`final-report.md`](final-report.md)

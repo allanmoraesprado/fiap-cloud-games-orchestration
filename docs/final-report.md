@@ -10,7 +10,7 @@
 | Discord username | `<discord username>` |
 | Documentation (entry point) | `https://github.com/allanmoraesprado/fiap-cloud-games-orchestration` (README + `docs/`) — `<confirm/adjust link>` |
 | Video | `<video link (12–15 min)>` |
-| Delivery tag | `phase-3` on every repository (see "Release tags") |
+| Delivery reference | Final commits on `main` of every repository (Git tags are optional, see "Versioning note") |
 
 ## Repositories
 
@@ -138,15 +138,15 @@ Key Vault for secrets; RS256/JWKS; managed MongoDB (Cosmos DB for MongoDB / Atla
 Redis, Kong on AKS or Konnect, managed Grafana/Prometheus, Loki on Kubernetes (Alloy
 DaemonSet); outbox + retries/DLQ; multi-broker Kafka; PVCs; CI/CD.
 
-## Release tags
+## Versioning note (optional)
 
-After the final commits are pushed, tag every repository:
+Git tags were not required for the academic delivery and were not used in previous phases.
+Creating a `phase-3` tag is **optional** and can be done later only as a versioning
+convenience. The delivery reference is the final commit on `main` of each repository. If a
+tag is ever wanted, the optional commands are:
 
 ```bash
+# optional versioning convenience, not part of the delivery
 git tag -a phase-3 -m "Tech Challenge Phase 3 delivery"
 git push origin phase-3
 ```
-
-Repositories: `fiap-cloud-games-users-api`, `fiap-cloud-games-catalog-api`,
-`fiap-cloud-games-payments-api`, `fiap-cloud-games-notifications-function`,
-`fiap-cloud-games-notifications-api` (history, README note), `fiap-cloud-games-orchestration`.

@@ -37,7 +37,7 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 | [docs/testing.md](docs/testing.md) | Unit tests (71 + 2 legacy) + validated Compose/Kubernetes evidence |
 | [docs/delivery-checklist.md](docs/delivery-checklist.md) | Phase 3 requirement → where satisfied → evidence |
 | [docs/demo-script.md](docs/demo-script.md) | 12–15 min video/demo roteiro |
-| [docs/final-report.md](docs/final-report.md) | Final delivery report draft (links, mapping, how to run, placeholders, tag plan) |
+| [docs/final-report.md](docs/final-report.md) | Final delivery report draft (links, mapping, how to run, placeholders) |
 | [scripts/smoke-compose.ps1](scripts/smoke-compose.ps1) | End-to-end smoke test of the Compose stack through Kong |
 
 ---
@@ -302,8 +302,9 @@ fiap-cloud-games-orchestration/
 
 ## Status
 
-**Phase 3 is delivery-ready** (tag `phase-3` after the final push; Phase 2 is preserved as
-tag `phase-2`): Kong API Gateway with JWT at the edge, serverless Notifications Function,
+**Phase 3 is delivery-ready** (final commits on `main`; Git tags are optional and were not
+required for the delivery — Phase 2 is preserved as tag `phase-2`): Kong API Gateway with
+JWT at the edge, serverless Notifications Function,
 MongoDB payment history, Redis cache, Prometheus/Grafana metrics, Loki/Alloy centralized
 logs, Docker Compose and local Kubernetes, 71 unit tests and full documentation. See
 [docs/delivery-checklist.md](docs/delivery-checklist.md) and [docs/final-report.md](docs/final-report.md).
