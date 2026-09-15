@@ -149,9 +149,10 @@ To apply a change to `gateway/kong.yml`: `docker compose restart kong` (or `dock
   compose profile.
 - Rate limiting uses the `local` policy (per Kong node). A shared policy (Redis) is not needed
   for a single local node.
-- Kong on **Kubernetes** (DB-less Deployment + ConfigMap + NodePort) comes in **P3-M7**;
-  `kong_*` metrics are scraped by Prometheus and shown in Grafana since **P3-M5**; centralized
-  logs in **P3-M6**.
+- Kong on **Kubernetes** (since P3-M7): DB-less Deployment, ConfigMap generated from this same
+  `gateway/kong.yml`, NodePort **30080** as the entry point (`k8s/kong.yaml`, see
+  [kubernetes.md](kubernetes.md)); `kong_*` metrics are scraped by Prometheus and shown in Grafana
+  since **P3-M5**; centralized logs in **P3-M6** (Compose).
 - Host ports (including `KONG_PROXY_PORT`, `KONG_ADMIN_PORT`, `KONG_STATUS_PORT`) are
   parameterized in `.env` since **P3-M3**; the URLs in this page use the defaults.
 - Startup: Kong is healthy before the .NET services finish booting (they have no container

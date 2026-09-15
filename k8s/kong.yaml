@@ -1,0 +1,115 @@
+# Kong Gateway 3.9 (Phase 3 / P3-M7), DB-less. The official Kubernetes entry point.
+#
+# The declarative configuration is NOT duplicated here: apply-all creates the
+# ConfigMap `kong-declarative` from ../gateway/kong.yml (single source of truth
+# shared with Docker Compose). Upstreams users-api / catalog-api / payments-api
+# resolve to the Kubernetes Services of the same name on port 8080, so the same
+# routes, JWT credential and plugins (jwt, rate-limiting, correlation-id,
+# prometheus) apply unchanged. No Ingress, no Kong Ingress Controller.
+#
+# Services:
+#   kong          ClusterIP  8000 (proxy) / 8001 (admin) / 8100 (status, /metrics for Prometheus)
+#   kong-nodeport NodePort   30080 -> 8000  (http://localhost:30080 on Docker Desktop)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: fcg
+  labels:
+    app: kong
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kong
+  template:
+    metadata:
+      labels:
+        app: kong
+    spec:
+      containers:
+        - name: kong
+          image: kong:3.9
+          ports:
+            - name: proxy
+              containerPort: 8000
+            - name: admin
+              containerPort: 8001
+            - name: status
+              containerPort: 8100
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: "/kong/declarative/kong.yml"
+            - name: KONG_PROXY_LISTEN
+              value: "0.0.0.0:8000"
+            - name: KONG_ADMIN_LISTEN
+              value: "0.0.0.0:8001"
+            - name: KONG_STATUS_LISTEN
+              value: "0.0.0.0:8100"
+            - name: KONG_PROXY_ACCESS_LOG
+              value: "/dev/stdout"
+            - name: KONG_ADMIN_ACCESS_LOG
+              value: "/dev/stdout"
+            - name: KONG_PROXY_ERROR_LOG
+              value: "/dev/stderr"
+            - name: KONG_ADMIN_ERROR_LOG
+              value: "/dev/stderr"
+            - name: KONG_LOG_LEVEL
+              value: "notice"
+          volumeMounts:
+            - name: declarative
+              mountPath: /kong/declarative
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: 8100
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: 8100
+            initialDelaySeconds: 20
+            periodSeconds: 15
+      volumes:
+        - name: declarative
+          configMap:
+            name: kong-declarative
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong
+  namespace: fcg
+spec:
+  type: ClusterIP
+  selector:
+    app: kong
+  ports:
+    - name: proxy
+      port: 8000
+      targetPort: 8000
+    - name: admin
+      port: 8001
+      targetPort: 8001
+    - name: status
+      port: 8100
+      targetPort: 8100
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-nodeport
+  namespace: fcg
+spec:
+  type: NodePort
+  selector:
+    app: kong
+  ports:
+    - name: proxy
+      port: 8000
+      targetPort: 8000
+      nodePort: 30080

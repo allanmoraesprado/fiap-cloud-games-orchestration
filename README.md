@@ -30,6 +30,7 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 | [docs/cache.md](docs/cache.md) | **Phase 3** Redis distributed cache (CatalogAPI): strategy, keys, TTLs, invalidation, HIT/MISS demo |
 | [docs/nosql.md](docs/nosql.md) | **Phase 3** MongoDB (PaymentsAPI): payment history document, idempotent upsert, payment-status query through Kong |
 | [docs/observability.md](docs/observability.md) | **Phase 3** Prometheus + Grafana metrics and Loki + Alloy centralized logs: targets, metrics per service, dashboards, LogQL, validation |
+| [docs/kubernetes.md](docs/kubernetes.md) | **Phase 3** local Kubernetes: what runs, ConfigMaps from shared files, build/apply, NodePorts, validation, logging decision |
 | [docs/event-flows.md](docs/event-flows.md) | Registration & purchase sequence diagrams, topics, consumer groups, idempotency |
 | [contracts/README.md](contracts/README.md) | Canonical event contracts (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`) |
 | [docs/testing.md](docs/testing.md) | Unit tests (37) + validated Compose/Kubernetes evidence |
@@ -206,44 +207,34 @@ curl -s http://localhost:3100/loki/api/v1/label/compose_service/values
 
 ## Kubernetes (local)
 
-Run the same system on **local Kubernetes** (Docker Desktop Kubernetes recommended).
-Manifests use the **hybrid** layout: each service repo has its own `/k8s`
-(Deployment + Service + ConfigMap); this repo's `/k8s` holds shared infrastructure
-(namespace, Kafka, PostgreSQL, shared ConfigMap/Secret) and the apply scripts. All
-resources live in the `fcg` namespace.
+The full **Phase 3** platform also runs on **local Kubernetes** (Docker Desktop) with pure
+manifests in the `fcg` namespace: PostgreSQL, Kafka + topics Job, Redis, MongoDB, the three
+APIs, the Notifications Function, Kong (NodePort **30080**, the official entry point),
+Prometheus (30090) and Grafana (30300). Hybrid layout: each app repo owns its `/k8s`; this
+repo owns the infrastructure, the gateway, the observability stack and the scripts. The
+gateway and observability ConfigMaps are generated from the same files Compose uses
+(`gateway/kong.yml`, `observability/...`). Details, validation commands and the logging
+decision: [docs/kubernetes.md](docs/kubernetes.md).
 
-> Enable Kubernetes in Docker Desktop (Settings → Kubernetes → Enable) first, and
-> stop the compose stack (`docker compose down`) so ports 8080/8082 are free for
-> port-forwarding. The four service repos must be cloned as siblings of this repo.
+> Enable Kubernetes in Docker Desktop first and stop the compose stack (`docker compose down`).
+> The service repos must be cloned as siblings of this repo.
 
 ```powershell
-# PowerShell is the primary path on Windows
-.\k8s\build-images.ps1     # build the 4 images (Docker Desktop shares the image store; no load step)
-.\k8s\apply-all.ps1        # namespace -> shared config/secret -> postgres+kafka -> topics Job -> services
-```
-Shell equivalents: `k8s/build-images.sh`, `k8s/apply-all.sh`.
-
-Validate:
-```powershell
-kubectl get pods -n fcg
-kubectl get svc  -n fcg
-kubectl get configmap,secret -n fcg
-
-# access UsersAPI + CatalogAPI (each in its own terminal)
-kubectl port-forward -n fcg svc/users-api   8080:8080
-kubectl port-forward -n fcg svc/catalog-api 8082:8080
-
-# Kafka / consumer-group evidence
-$KPOD = kubectl get pod -n fcg -l app=kafka -o jsonpath='{.items[0].metadata.name}'
-kubectl exec -n fcg $KPOD -- /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
-kubectl exec -n fcg $KPOD -- /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group catalog-service
+# PowerShell is the primary path on Windows; shell equivalents: k8s/build-images.sh, k8s/apply-all.sh
+.\k8s\build-images.ps1     # fcg-users-api, fcg-catalog-api, fcg-payments-api, fcg-notifications-function (:local)
+.\k8s\apply-all.ps1        # namespace -> config/secret -> postgres+kafka -> topics -> redis+mongo -> APIs -> function -> kong -> prometheus -> grafana
+kubectl get pods,svc -n fcg
 ```
 
-Tear down: `kubectl delete namespace fcg`.
+Then use `http://localhost:30080` exactly like the Compose gateway (register, login,
+`/api/games`, purchase, `/api/payments/order/{orderId}`), check Redis/Mongo/function with
+`kubectl exec` / `kubectl logs`, and open Grafana on `http://localhost:30300`. Tear down:
+`kubectl delete namespace fcg`.
 
-Secrets in `k8s/shared-secret.yaml` are **local/development placeholders only**. In
-production they would come from a secret manager (e.g. **Azure Key Vault**) — a
-documented future improvement, not integrated in this MVP.
+Centralized logs (Loki + Alloy) are **Compose-only**; on Kubernetes use `kubectl logs`
+(collection with an Alloy DaemonSet is documented as a future improvement). Secrets in
+`k8s/shared-secret.yaml` are **local/development placeholders only**; in production they
+would come from a secret manager (e.g. **Azure Key Vault**) — documented, not integrated.
 
 ---
 
@@ -263,7 +254,7 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 | `notifications-api` (legacy profile) | `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` |
 
 - **In-network names:** services use `kafka:9092`, `postgres:5432`, `redis:6379` and `mongo:27017` (never `localhost`).
-- **Kubernetes:** a shared `fcg-config` (JWT issuer/audience, Kafka bootstrap) + a shared `fcg-secret` (JWT key, Postgres password) + a per-service ConfigMap; the DB password is injected from the Secret and never duplicated.
+- **Kubernetes:** a shared `fcg-config` (JWT issuer/audience, Kafka bootstrap) + a shared `fcg-secret` (JWT key, Postgres/Mongo passwords, Grafana admin password) + a per-service ConfigMap; passwords are injected from the Secret and never duplicated. Gateway and observability ConfigMaps are generated from `gateway/kong.yml` and `observability/` (see [docs/kubernetes.md](docs/kubernetes.md)).
 - No container healthchecks on the .NET services (the `aspnet` image lacks curl); startup order is handled by `depends_on` (Compose) / `readinessProbe` (k8s) plus the services' retry/resilience.
 
 ## Security & secrets
@@ -286,12 +277,13 @@ fiap-cloud-games-orchestration/
 ├── gateway/kong.yml            # Kong DB-less declarative config (routes, JWT, plugins)
 ├── observability/              # prometheus/prometheus.yml · loki/loki.yml · alloy/config.alloy · grafana/provisioning (datasources, dashboards) · grafana/dashboards/*.json
 ├── db/init/01-create-databases.sql   # creates fcg_users + fcg_catalog
-├── k8s/                        # shared infra manifests + build/apply scripts
+├── k8s/                        # shared infra + gateway + observability manifests, build/apply scripts
 │   ├── namespace.yaml · shared-config.yaml · shared-secret.yaml
-│   ├── postgres.yaml · kafka.yaml · kafka-topics-job.yaml
+│   ├── postgres.yaml · kafka.yaml · kafka-topics-job.yaml · redis.yaml · mongo.yaml
+│   ├── kong.yaml · prometheus.yaml · grafana.yaml
 │   └── build-images.ps1/.sh · apply-all.ps1/.sh
 ├── contracts/README.md         # canonical event-contract reference
-└── docs/                        # architecture · gateway · cache · nosql · observability · event-flows · testing · delivery-checklist · demo-script
+└── docs/                        # architecture · gateway · cache · nosql · observability · kubernetes · event-flows · testing · delivery-checklist · demo-script
 ```
 
 ---
@@ -304,5 +296,6 @@ JWT, unit tests, and full documentation. See [docs/delivery-checklist.md](docs/d
 
 **Phase 3 in progress:** P3-M1 Notifications Function (own repository), P3-M2 Kong API
 Gateway, P3-M3 Redis cache + host-port parameterization, P3-M4 MongoDB payment history,
-P3-M5 Prometheus + Grafana metrics and P3-M6 Loki + Alloy centralized logs (with the function
-wired into Compose) are done. Next: Kubernetes updates (P3-M7) and final docs (P3-M8).
+P3-M5 Prometheus + Grafana metrics, P3-M6 Loki + Alloy centralized logs (with the function
+wired into Compose) and P3-M7 local Kubernetes for the whole Phase 3 stack are done. Next:
+final docs and delivery checklist (P3-M8).
