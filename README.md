@@ -28,6 +28,7 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 | [docs/architecture.md](docs/architecture.md) | System overview, responsibilities, architecture diagram, design decisions, future improvements |
 | [docs/gateway.md](docs/gateway.md) | **Phase 3** Kong API Gateway: routes, JWT at the edge, rate limit, correlation id, metrics, curl examples |
 | [docs/cache.md](docs/cache.md) | **Phase 3** Redis distributed cache (CatalogAPI): strategy, keys, TTLs, invalidation, HIT/MISS demo |
+| [docs/nosql.md](docs/nosql.md) | **Phase 3** MongoDB (PaymentsAPI): payment history document, idempotent upsert, payment-status query through Kong |
 | [docs/event-flows.md](docs/event-flows.md) | Registration & purchase sequence diagrams, topics, consumer groups, idempotency |
 | [contracts/README.md](contracts/README.md) | Canonical event contracts (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`) |
 | [docs/testing.md](docs/testing.md) | Unit tests (37) + validated Compose/Kubernetes evidence |
@@ -54,6 +55,9 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 - **Redis 7** — Phase 3 distributed cache for the CatalogAPI read model (games list, game by
   id, user library) with short TTLs, explicit invalidation and PostgreSQL fallback. Details in
   [docs/cache.md](docs/cache.md).
+- **MongoDB 7** — Phase 3 NoSQL database of PaymentsAPI: payment history in
+  `fcg_payments.payments` (one document per order, idempotent upsert) and the protected
+  `GET /api/payments/order/{orderId}` query. Details in [docs/nosql.md](docs/nosql.md).
 
 Single-broker, RF 1, single-partition are deliberate **MVP** choices.
 
@@ -98,9 +102,10 @@ the same value.
 |---|---|---|---|
 | `POSTGRES_HOST_PORT` | 5432 | `USERS_API_HOST_PORT` | 8080 |
 | `REDIS_HOST_PORT` | 6379 | `CATALOG_API_HOST_PORT` | 8082 |
-| `KAFKA_HOST_PORT` | 29092 | `PAYMENTS_API_HOST_PORT` | 8083 |
-| `KONG_PROXY_PORT` | 8000 | `NOTIFICATIONS_API_HOST_PORT` | 8081 |
-| `KONG_ADMIN_PORT` | 8001 | `KONG_STATUS_PORT` | 8100 |
+| `MONGO_HOST_PORT` | 27017 | `PAYMENTS_API_HOST_PORT` | 8083 |
+| `KAFKA_HOST_PORT` | 29092 | `NOTIFICATIONS_API_HOST_PORT` | 8081 |
+| `KONG_PROXY_PORT` | 8000 | `KONG_ADMIN_PORT` | 8001 |
+| `KONG_STATUS_PORT` | 8100 | | |
 
 Stop:
 ```bash
@@ -117,8 +122,9 @@ docker compose down -v        # also removes the volume (forces DB re-init)
 | UsersAPI (direct) | http://localhost:8080/swagger | Swagger + dev only |
 | CatalogAPI (direct) | http://localhost:8082/swagger | Swagger + dev only |
 | NotificationsAPI (direct) | http://localhost:8081/health | Phase 2 legacy consumer (see logs) |
-| PaymentsAPI (direct) | http://localhost:8083/health | payment simulation (see logs) |
+| PaymentsAPI (direct) | http://localhost:8083/swagger | Swagger + dev only; payment history query |
 | Redis (direct) | `localhost:6379` (`REDIS_HOST_PORT`) | cache inspection with `redis-cli` (see [docs/cache.md](docs/cache.md)) |
+| MongoDB (direct) | `localhost:27017` (`MONGO_HOST_PORT`) | `fcg_payments` inspection with `mongosh` (see [docs/nosql.md](docs/nosql.md)) |
 
 Swagger UI is served by the services on their direct ports only (not through Kong).
 URLs above use the default host ports; adjust if you changed them in `.env`.
@@ -136,8 +142,10 @@ URLs above use the default host ports; adjust if you changed them in `.env`.
 4. `POST http://localhost:8000/api/library/acquire/{gameId}` → **202** `{ orderId }`.
 5. `GET http://localhost:8000/api/library/my-games` → the game appears (`X-FCG-Cache: MISS`
    right after the approved payment invalidated the library entry, then HIT).
-6. Burst 12 calls to `GET /api/games` → **429** after the 5th (rate limit, see [docs/gateway.md](docs/gateway.md)).
-7. Watch the chain: `docker compose logs -f kong users-api catalog-api payments-api notifications-api`.
+6. `GET http://localhost:8000/api/payments/order/{orderId}` → 200 with `status: Approved` and
+   the reason (payment history from MongoDB; another user gets 403, Admin 200).
+7. Burst 12 calls to `GET /api/games` → **429** after the 5th (rate limit, see [docs/gateway.md](docs/gateway.md)).
+8. Watch the chain: `docker compose logs -f kong users-api catalog-api payments-api notifications-api`.
 
 The same calls work on the direct ports (8080/8082) for development.
 
@@ -221,10 +229,10 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 |---|---|
 | `users-api` | `ConnectionStrings__Postgres` → `fcg_users` · `Jwt__SecretKey/Issuer/Audience` · `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` |
 | `catalog-api` | `ConnectionStrings__Postgres` → `fcg_catalog` · `Jwt__SecretKey/Issuer/Audience` · `Kafka__BootstrapServers` · `Kafka__OrderPlacedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__PaymentsConsumerGroup` · `Redis__Enabled` · `Redis__ConnectionString` · `Redis__DefaultTtlSeconds` · `Redis__ExposeOutcomeHeader` |
-| `payments-api` | `Kafka__BootstrapServers` · `Kafka__OrderPlacedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` · `Payment__RejectAboveAmount` |
+| `payments-api` | `Kafka__BootstrapServers` · `Kafka__OrderPlacedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` · `Payment__RejectAboveAmount` · `Mongo__ConnectionString` → `fcg_payments` · `Mongo__DatabaseName` · `Mongo__PaymentsCollectionName` · `Jwt__SecretKey/Issuer/Audience` |
 | `notifications-api` | `Kafka__BootstrapServers` · `Kafka__UserCreatedTopic` · `Kafka__PaymentProcessedTopic` · `Kafka__ConsumerGroup` |
 
-- **In-network names:** services use `kafka:9092`, `postgres:5432` and `redis:6379` (never `localhost`).
+- **In-network names:** services use `kafka:9092`, `postgres:5432`, `redis:6379` and `mongo:27017` (never `localhost`).
 - **Kubernetes:** a shared `fcg-config` (JWT issuer/audience, Kafka bootstrap) + a shared `fcg-secret` (JWT key, Postgres password) + a per-service ConfigMap; the DB password is injected from the Secret and never duplicated.
 - No container healthchecks on the .NET services (the `aspnet` image lacks curl); startup order is handled by `depends_on` (Compose) / `readinessProbe` (k8s) plus the services' retry/resilience.
 
@@ -232,7 +240,7 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 
 - **Authentication:** shared symmetric **JWT** (HMAC-SHA256). UsersAPI issues tokens; CatalogAPI validates them locally with the **same** `SecretKey`/`Issuer`/`Audience` — no call to UsersAPI. Passwords are stored as **PBKDF2** hashes.
 - **Gateway (Phase 3):** Kong validates the same token at the edge on protected routes (`jwt` plugin, consumer credential keyed by the `iss` claim). The services keep validating it (defense in depth) and own all role/ownership authorization. The credential secret in `gateway/kong.yml` is the same committed dev placeholder as `JWT__SECRETKEY` and must be kept in sync with it — see [docs/gateway.md](docs/gateway.md).
-- **Placeholders only:** `JWT__SECRETKEY` and the Postgres credentials are development placeholders in `.env.example` and `k8s/shared-secret.yaml`. `.gitignore` excludes `.env`/secrets; **no real secrets are committed**.
+- **Placeholders only:** `JWT__SECRETKEY`, the Postgres credentials and the MongoDB root credentials are development placeholders in `.env.example` and `k8s/shared-secret.yaml`. `.gitignore` excludes `.env`/secrets; **no real secrets are committed**.
 - Local Kafka is **PLAINTEXT** (local-only); containers run as **non-root**.
 - **Future production improvement:** replace the placeholder Kubernetes Secret with a managed secret store such as **Azure Key Vault** — documented only, **not implemented** in this MVP.
 
@@ -242,7 +250,7 @@ Compose `environment:` and Kubernetes ConfigMaps/Secret.
 
 ```
 fiap-cloud-games-orchestration/
-├── docker-compose.yml          # postgres + kafka + kafka-init + redis + 4 services + kong
+├── docker-compose.yml          # postgres + kafka + kafka-init + redis + mongo + 4 services + kong
 ├── .env.example                # config template (placeholders + host ports)
 ├── .gitignore · README.md
 ├── gateway/kong.yml            # Kong DB-less declarative config (routes, JWT, plugins)
@@ -252,7 +260,7 @@ fiap-cloud-games-orchestration/
 │   ├── postgres.yaml · kafka.yaml · kafka-topics-job.yaml
 │   └── build-images.ps1/.sh · apply-all.ps1/.sh
 ├── contracts/README.md         # canonical event-contract reference
-└── docs/                        # architecture · gateway · cache · event-flows · testing · delivery-checklist · demo-script
+└── docs/                        # architecture · gateway · cache · nosql · event-flows · testing · delivery-checklist · demo-script
 ```
 
 ---
@@ -264,5 +272,6 @@ running via Docker Compose and on local Kubernetes, with per-service databases, 
 JWT, unit tests, and full documentation. See [docs/delivery-checklist.md](docs/delivery-checklist.md).
 
 **Phase 3 in progress:** P3-M1 Notifications Function (own repository, `func start`),
-P3-M2 Kong API Gateway (this repo, Compose) and P3-M3 Redis cache + host-port parameterization
-are done. Next: MongoDB, Prometheus/Grafana, Loki, Kubernetes updates and final docs.
+P3-M2 Kong API Gateway (this repo, Compose), P3-M3 Redis cache + host-port parameterization
+and P3-M4 MongoDB payment history are done. Next: Prometheus/Grafana, Loki, Kubernetes
+updates and final docs.

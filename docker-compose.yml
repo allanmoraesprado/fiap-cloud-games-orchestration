@@ -4,8 +4,9 @@ name: fcg-orchestration
 # FIAP Cloud Games - Full local system
 # PostgreSQL (two logical databases) + single-broker Apache Kafka
 # (KRaft, no Zookeeper) + topic init, plus the four microservices (Phase 2),
-# the Kong API Gateway (Phase 3 / P3-M2, DB-less, ./gateway/kong.yml) and
-# Redis (Phase 3 / P3-M3, distributed cache for the CatalogAPI read model).
+# the Kong API Gateway (Phase 3 / P3-M2, DB-less, ./gateway/kong.yml),
+# Redis (Phase 3 / P3-M3, distributed cache for the CatalogAPI read model) and
+# MongoDB (Phase 3 / P3-M4, NoSQL payment history for PaymentsAPI).
 # `docker compose up -d --build` runs the complete system.
 #
 # Host ports are parameterized (*_HOST_PORT / KONG_*_PORT in .env.example) so a
@@ -110,6 +111,26 @@ services:
       retries: 10
       start_period: 3s
 
+  # MongoDB 7 (Phase 3 / P3-M4): NoSQL persistence for PaymentsAPI
+  # (database fcg_payments, collection payments, one document per order).
+  # Root credentials are LOCAL/DEV placeholders (see .env.example).
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-fcg}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-fcg}
+    ports:
+      - "${MONGO_HOST_PORT:-27017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   # ------------------------------------------------------------------
   # .NET microservices (M6). Images build from the sibling repositories.
   # In-network names: kafka:9092, postgres:5432. No container healthchecks
@@ -173,6 +194,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
+      mongo:
+        condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
     environment:
@@ -181,6 +204,14 @@ services:
       Kafka__PaymentProcessedTopic: fcg.payments.processed
       Kafka__ConsumerGroup: payments-service
       Payment__RejectAboveAmount: "1000"
+      # MongoDB payment history (Phase 3): fcg_payments.payments, one document per order.
+      Mongo__ConnectionString: "mongodb://${MONGO_USER:-fcg}:${MONGO_PASSWORD:-fcg}@mongo:27017/?authSource=admin"
+      Mongo__DatabaseName: fcg_payments
+      Mongo__PaymentsCollectionName: payments
+      # Same shared secret/issuer/audience as users-api -> validates its tokens for /api/payments.
+      Jwt__SecretKey: ${JWT__SECRETKEY:-dev-only-change-me-please-min-32-characters-placeholder}
+      Jwt__Issuer: ${JWT__ISSUER:-FiapCloudGames}
+      Jwt__Audience: ${JWT__AUDIENCE:-FiapCloudGames}
     ports:
       - "${PAYMENTS_API_HOST_PORT:-8083}:8080"
 
@@ -245,3 +276,4 @@ services:
 
 volumes:
   pg_data:
+  mongo_data:

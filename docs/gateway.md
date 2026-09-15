@@ -17,7 +17,7 @@ clients should call the platform through the gateway.
 | Gateway Status API | `http://127.0.0.1:8100/metrics` | Prometheus metrics (scraped in a later milestone) |
 | UsersAPI (direct) | `http://localhost:8080/swagger` | Swagger UI + dev access |
 | CatalogAPI (direct) | `http://localhost:8082/swagger` | Swagger UI + dev access |
-| PaymentsAPI (direct) | `http://localhost:8083/health` | Health only |
+| PaymentsAPI (direct) | `http://localhost:8083/swagger` | Swagger UI + dev access (since P3-M4) |
 | NotificationsAPI (direct, Phase 2 legacy) | `http://localhost:8081/health` | Still in Compose until the Notifications Function is wired in |
 
 Swagger is **not** routed through Kong (`http://localhost:8000/swagger` → 404 `no Route matched`).
@@ -33,7 +33,7 @@ expose, so **no API changed**.
 | `users-protected` | `/api/users` | `users-api:8080` | **Yes** | Admin role enforced by UsersAPI (non-admin → 403) |
 | `catalog-games` | `/api/games` | `catalog-api:8080` | **Yes** | Game catalog (admin writes enforced by CatalogAPI) |
 | `catalog-library` | `/api/library` | `catalog-api:8080` | **Yes** | Purchase + library |
-| `payments-protected` | `/api/payments` | `payments-api:8080` | **Yes** | Reserved for the payment-status endpoint (P3-M4); upstream answers 404 until then |
+| `payments-protected` | `/api/payments` | `payments-api:8080` | **Yes** | `GET /api/payments/order/{orderId}` — owner or Admin (rule enforced by PaymentsAPI, see [nosql.md](nosql.md)) |
 
 ## Plugins
 
@@ -102,7 +102,7 @@ curl -i http://localhost:8000/api/users -H "Authorization: Bearer $ADMIN"
 curl -X POST http://localhost:8000/api/library/acquire/<gameId> -H "Authorization: Bearer $TOKEN"   # 202 { orderId }
 curl http://localhost:8000/api/library/my-games -H "Authorization: Bearer $TOKEN"                    # game appears after approval
 
-# Payments route: 401 without token; 404 with token until the endpoint arrives in P3-M4
+# Payments route: 401 without token; 200 for the buyer/Admin, 403 for another user, 404 unknown order
 curl -i http://localhost:8000/api/payments/order/<orderId> -H "Authorization: Bearer $TOKEN"
 ```
 
@@ -142,8 +142,8 @@ To apply a change to `gateway/kong.yml`: `docker compose restart kong` (or `dock
 
 ## Limitations and what remains for later milestones
 
-- `/api/payments/*` is routed and JWT-protected but the endpoint only exists from **P3-M4**
-  (PaymentsAPI + MongoDB); today the upstream answers 404 after the token check.
+- `/api/payments/*` serves the payment-status query since **P3-M4** (PaymentsAPI + MongoDB);
+  PaymentsAPI validates the JWT again and enforces owner/Admin access.
 - The Phase 2 `notifications-api` container is still in Compose; the Notifications Function
   (`fiap-cloud-games-notifications-function`, run with `func start`) replaces it when the
   Compose profile / Kubernetes wiring lands in later milestones.
