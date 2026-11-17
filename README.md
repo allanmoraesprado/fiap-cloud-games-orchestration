@@ -26,6 +26,7 @@ The complete system runs on **Docker Compose** and on **local Kubernetes**
 
 | Doc | Contents |
 |---|---|
+| [docs/phase4/](docs/phase4/PLAN.md) | **Phase 4 (in progress, pt-BR)**: plan, status, requirements matrix, decisions, costs, risks, evidence, handoff |
 | [docs/architecture.md](docs/architecture.md) | System overview, responsibilities, architecture diagram, design decisions, future improvements |
 | [docs/gateway.md](docs/gateway.md) | **Phase 3** Kong API Gateway: routes, JWT at the edge, rate limit, correlation id, metrics, curl examples |
 | [docs/cache.md](docs/cache.md) | **Phase 3** Redis distributed cache (CatalogAPI): strategy, keys, TTLs, invalidation, HIT/MISS demo |
