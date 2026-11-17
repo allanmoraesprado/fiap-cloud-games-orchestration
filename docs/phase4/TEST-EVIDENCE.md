@@ -200,3 +200,12 @@ Análise e correção:
 - **actionlint**: no runner o actionlint executa o shellcheck nos blocos `run`; avisos SC2016 (lista de
   variáveis do `envsubst` em aspas simples, intencional) e SC2094 (falso positivo). Diretiva
   `shellcheck disable` com justificativa; actionlint + shellcheck 0.11.0 locais sem apontamentos.
+
+Reexecução após as correções:
+
+| Repositório | Run | Commit | Resultado |
+|---|---|---|---|
+| notifications-function | [44200953091](https://github.com/allanmoraesprado/fiap-cloud-games-notifications-function/actions/runs/44200953091) | `6c1198f` | **success** (gate do Trivy aprovado) |
+| orchestration | [44200994619](https://github.com/allanmoraesprado/fiap-cloud-games-orchestration/actions/runs/44200994619) | `b026a28` | **success** (Terraform, kubeconform com os `k8s/azure` dos 4 serviços, Compose, shellcheck, actionlint) |
+
+Estado: **CI verde nos 5 repositórios**. Job de CD: ignorado por desenho até `AZURE_DEPLOY_ENABLED=true` (M5).

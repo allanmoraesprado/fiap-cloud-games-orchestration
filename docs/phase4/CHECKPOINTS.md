@@ -67,3 +67,14 @@
   preservado em `docs/README-phase3.md`), guias DATA, OBSERVABILITY, VIDEO-SCRIPT, CHECKLIST, FINAL-REPORT.
 - **Evidências**: runs do GitHub Actions e medição local do cache em [TEST-EVIDENCE.md](TEST-EVIDENCE.md).
 - **Próxima ação**: confirmar o novo CI (function + orchestration) verde.
+
+## CP-05 — 2026-11-17 — Encerramento da sessão
+
+- **Status consolidado**: M0 APROVADO · M1 APROVADO (local; Elastic Cloud PENDENTE) · M2 APROVADO (declarativo) ·
+  M3 PENDENTE (validação real) · M4 PENDENTE (CI verde nos 5 repositórios; CD real) · M5 BLOQUEADO (assinatura) ·
+  M6 NÃO INICIADO (depende do M5) · M7 EM EXECUÇÃO (documentação pronta; faltam evidências de nuvem e dados do grupo).
+- **HEADs**: orchestration (este commit), users-api `6d76552`, catalog-api `47b920a`, payments-api `3cd02a0`,
+  notifications-function `6c1198f`.
+- **Ambientes locais criados nesta sessão**: removidos (`fcg-p4`, `fcg-sim`, imagens `:sim`, cache do Trivy).
+  Ambientes pré-existentes não foram alterados (exceto a reinicialização do Docker Desktop após a queda da VM).
+- **Bloqueio**: assinatura Azure (K01). Próximo passo: [HANDOFF.md](HANDOFF.md).
