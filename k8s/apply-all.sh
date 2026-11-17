@@ -18,9 +18,10 @@ kubectl -n fcg rollout status deploy/postgres --timeout=180s
 kubectl -n fcg rollout status deploy/kafka --timeout=180s
 echo "4) topics job";           kubectl apply -f "$K/kafka-topics-job.yaml"
 kubectl -n fcg wait --for=condition=complete job/kafka-topics --timeout=180s
-echo "5) redis + mongo";        kubectl apply -f "$K/redis.yaml" -f "$K/mongo.yaml"
+echo "5) redis + mongo + elasticsearch"; kubectl apply -f "$K/redis.yaml" -f "$K/mongo.yaml" -f "$K/elasticsearch.yaml"
 kubectl -n fcg rollout status deploy/redis --timeout=120s
 kubectl -n fcg rollout status deploy/mongo --timeout=180s
+kubectl -n fcg rollout status deploy/elasticsearch --timeout=240s
 echo "6) APIs"
 kubectl apply -f "$ROOT/fiap-cloud-games-users-api/k8s"
 kubectl apply -f "$ROOT/fiap-cloud-games-catalog-api/k8s"

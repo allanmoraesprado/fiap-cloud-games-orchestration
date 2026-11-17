@@ -135,6 +135,26 @@ services:
       retries: 10
       start_period: 10s
 
+  # Elasticsearch 9 (Phase 4): search engine for the CatalogAPI game search
+  # (index fcg-games). LOCAL/DEV ONLY: single node, security disabled, no volume -
+  # the index is a derived copy that CatalogAPI rebuilds from PostgreSQL on its own
+  # (reconciliation job). The cloud environment uses a managed Elastic Cloud cluster.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "${ELASTICSEARCH_HOST_PORT:-9200}:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=2s' >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
   # ------------------------------------------------------------------
   # .NET microservices (Phase 2). Images build from the sibling repositories.
   # In-network names: kafka:9092, postgres:5432. No container healthchecks
@@ -173,6 +193,10 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      # Started, not healthy: CatalogAPI runs without the search engine and indexes
+      # everything once Elasticsearch answers.
+      elasticsearch:
+        condition: service_started
     environment:
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=fcg_catalog;Username=${POSTGRES_USER:-fcg};Password=${POSTGRES_PASSWORD:-fcg}"
       # Same shared secret/issuer/audience as users-api -> validates its tokens.
@@ -189,6 +213,12 @@ services:
       Redis__ConnectionString: "redis:6379,abortConnect=false,connectTimeout=1000,syncTimeout=1000"
       Redis__DefaultTtlSeconds: "60"
       Redis__ExposeOutcomeHeader: "true"
+      # Elasticsearch game search (Phase 4): GET /api/games/search; index kept in sync after
+      # writes plus a reconciliation job (15 s here so recovery is quick to demonstrate).
+      Elasticsearch__Enabled: "true"
+      Elasticsearch__Url: http://elasticsearch:9200
+      Elasticsearch__IndexName: fcg-games
+      Elasticsearch__ReconcileIntervalSeconds: "15"
     ports:
       - "${CATALOG_API_HOST_PORT:-8082}:8080"
 

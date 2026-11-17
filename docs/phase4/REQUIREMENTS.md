@@ -17,8 +17,8 @@ Legenda de status: `NÃO INICIADO`, `EM EXECUÇÃO`, `PENDENTE`, `BLOQUEADO`, `A
 | R06 | Rolling Update validado | M4, M6 | `RollingUpdate` (`maxUnavailable: 0`, `maxSurge: 1`), readiness | `kubectl rollout status/history`, sonda de disponibilidade durante o deploy | NÃO INICIADO |
 | R07 | MongoDB integrado | M5, M6 | Já implementado (Fase 3); StatefulSet com PVC no AKS | Pagamento → documento → `GET /api/payments/order/{id}` | PENDENTE (cloud) |
 | R08 | Redis integrado e impacto medido | M5, M6 | Já implementado (Fase 3); script de medição de latência | MISS/HIT/invalidação + amostras numéricas | PENDENTE (cloud) |
-| R09 | Elasticsearch gerenciado com fuzzy search e relevância | M1, M5, M6 | CatalogAPI + Elastic Cloud | Testes de integração + smoke contra Elastic Cloud | NÃO INICIADO |
-| R10 | Sincronização do índice implementada e validada | M1 | Indexação pós-commit + reconciliação + reindexação | Testes de integração e smoke | NÃO INICIADO |
+| R09 | Elasticsearch gerenciado com fuzzy search e relevância | M1, M5, M6 | CatalogAPI + Elastic Cloud | Testes de integração + smoke contra Elastic Cloud | PENDENTE (local aprovado; Elastic Cloud no M6) |
+| R10 | Sincronização do índice implementada e validada | M1 | Indexação pós-commit + reconciliação + reindexação | Testes de integração e smoke | APROVADO (local) |
 | R11 | Key Vault integrado às aplicações | M3, M5 | CSI Driver + Workload Identity | Segredo lido em runtime no pod; nenhum `Secret` k8s com credenciais | NÃO INICIADO |
 | R12 | Testes e smoke tests aprovados | todos | `dotnet test`, scripts de smoke | [TEST-EVIDENCE.md](TEST-EVIDENCE.md) | EM EXECUÇÃO |
 | R13 | Relatórios e documentação completos | M7 | `docs/phase4/*`, README | Revisão final | EM EXECUÇÃO |
@@ -29,18 +29,18 @@ Legenda de status: `NÃO INICIADO`, `EM EXECUÇÃO`, `PENDENTE`, `BLOQUEADO`, `A
 
 | ID | Requisito | Implementação prevista | Teste | Status |
 |---|---|---|---|---|
-| R16 | Endpoint `GET /api/games/search` | `GamesController.Search` | Integração + smoke | NÃO INICIADO |
-| R17 | Pesquisa textual por nome e demais campos | `multi_match` em `title^3`, `genre^2`, `description` | Integração | NÃO INICIADO |
-| R18 | Fuzzy Search | `fuzziness: AUTO`, `prefix_length: 1` | "Cosmik Odysey" → "Cosmic Odyssey" | NÃO INICIADO |
-| R19 | Ordenação por relevância | `_score` desc + boost de frase exata no título; desempate por título | Integração (ordem) | NÃO INICIADO |
-| R20 | Tratamento de entradas inválidas | `q` 2–100 caracteres, `page ≥ 1`, `pageSize 1–50`, janela ≤ 10.000 → 400 | Unitário + smoke | NÃO INICIADO |
-| R21 | Paginação | `from/size`, resposta com `total`, `page`, `pageSize` | Integração | NÃO INICIADO |
-| R22 | Indexação inicial dos jogos existentes | Reconciliação na inicialização (marca d'água vazia ⇒ carga completa) | Integração + smoke | NÃO INICIADO |
-| R23 | Indexação de jogos recém-criados | `GameService.CreateAsync` → indexador após commit | Unitário + integração + smoke | NÃO INICIADO |
-| R24 | Atualização após edição / desativação | `UpdateAsync`/`DeleteAsync` → upsert (desativado = `isActive:false`) | Unitário + integração + smoke | NÃO INICIADO |
-| R25 | Recuperação / reindexação | Reconciliação periódica + `POST /api/games/search/reindex` (Admin) | Integração | NÃO INICIADO |
-| R26 | Indisponibilidade do mecanismo de busca | Busca → 503 + `Retry-After`; escrita continua 2xx; reconciliação recupera | Integração + smoke (parar ES) | NÃO INICIADO |
-| R27 | Consistência eventual documentada | `docs/phase4/ELASTICSEARCH.md` | Revisão | NÃO INICIADO |
+| R16 | Endpoint `GET /api/games/search` | `GamesController.Search` | Integração + smoke | APROVADO (local) |
+| R17 | Pesquisa textual por nome e demais campos | `multi_match` em `title^3`, `genre^2`, `description` | Integração | APROVADO (local) |
+| R18 | Fuzzy Search | `fuzziness: AUTO`, `prefix_length: 1` | "Cosmik Odysey" → "Cosmic Odyssey" | APROVADO (local) |
+| R19 | Ordenação por relevância | `_score` desc + boost de frase exata no título; desempate por título | Integração (ordem) | APROVADO (local) |
+| R20 | Tratamento de entradas inválidas | `q` 2–100 caracteres, `page ≥ 1`, `pageSize 1–50`, janela ≤ 10.000 → 400 | Unitário + smoke | APROVADO (local) |
+| R21 | Paginação | `from/size`, resposta com `total`, `page`, `pageSize` | Integração | APROVADO (local) |
+| R22 | Indexação inicial dos jogos existentes | Reconciliação na inicialização (marca d'água vazia ⇒ carga completa) | Integração + smoke | APROVADO (local) |
+| R23 | Indexação de jogos recém-criados | `GameService.CreateAsync` → indexador após commit | Unitário + integração + smoke | APROVADO (local) |
+| R24 | Atualização após edição / desativação | `UpdateAsync`/`DeleteAsync` → upsert (desativado = `isActive:false`) | Unitário + integração + smoke | APROVADO (local) |
+| R25 | Recuperação / reindexação | Reconciliação periódica + `POST /api/games/search/reindex` (Admin) | Integração | APROVADO (local) |
+| R26 | Indisponibilidade do mecanismo de busca | Busca → 503 + `Retry-After`; escrita continua 2xx; reconciliação recupera | Integração + smoke (parar ES) | APROVADO (local) |
+| R27 | Consistência eventual documentada | [ELASTICSEARCH.md](ELASTICSEARCH.md) | Revisão | APROVADO |
 
 ## Infraestrutura (P4-M2)
 

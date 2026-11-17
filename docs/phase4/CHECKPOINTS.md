@@ -18,3 +18,22 @@
 - **Evidências**: [TEST-EVIDENCE.md](TEST-EVIDENCE.md).
 - **Pendências**: assinatura Azure inutilizável (K01); Terraform/gh/kubelogin ausentes na estação.
 - **Próxima ação**: P4-M1 (Elasticsearch no CatalogAPI).
+
+## CP-02 — 2026-11-17 — P4-M1 Elasticsearch e busca avançada
+
+- **Objetivo**: busca textual independente do relacional, fuzzy, relevância, sincronização do índice.
+- **Status**: APROVADO (critério local); validação no Elastic Cloud PENDENTE (M6).
+- **Alterações**:
+  - catalog-api: endpoint `GET /api/games/search`, `POST /api/games/search/reindex`, indexador com
+    mapeamento explícito, serviço de consulta, `GameSearchSync`, `SearchIndexReconciler`, 503 com
+    `Retry-After`, métricas, `ListUpdatedSinceAsync`, configuração `Elasticsearch:*`, 48 testes novos
+    (32 unitários + 16 integração), README.
+  - orchestration: serviço `elasticsearch` no Compose, variáveis da CatalogAPI, `ELASTICSEARCH_HOST_PORT`,
+    `k8s/elasticsearch.yaml` + `apply-all`, smoke com busca e queda/recuperação, `docs/phase4/ELASTICSEARCH.md`.
+- **Commits**: catalog-api `b2a66b5`; orchestration (este checkpoint).
+- **Comandos**: `dotnet test` (70/70), `docker compose -p fcg-p4 up -d --build`, `smoke-compose.ps1 -SearchOutage`,
+  `kubectl apply --dry-run=server` (manifests locais do ES/configmap).
+- **Testes reprovados**: nenhum (1ª execução do smoke: falso negativo do script, corrigido).
+- **Pendências**: Elastic Cloud (depende de conta do proprietário); painel de busca no Grafana (M6/M7).
+- **Ambiente local**: stack `fcg-p4` criada para o smoke (removida ao final do marco; ver HANDOFF).
+- **Próxima ação**: P4-M2 (Terraform + manifests do AKS).

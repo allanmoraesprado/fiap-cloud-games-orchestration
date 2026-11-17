@@ -36,10 +36,11 @@ Write-Host "4) create topics (Job)"
 kubectl apply -f "$k\kafka-topics-job.yaml"
 kubectl -n fcg wait --for=condition=complete job/kafka-topics --timeout=180s
 
-Write-Host "5) redis + mongo"
-kubectl apply -f "$k\redis.yaml" -f "$k\mongo.yaml"
+Write-Host "5) redis + mongo + elasticsearch"
+kubectl apply -f "$k\redis.yaml" -f "$k\mongo.yaml" -f "$k\elasticsearch.yaml"
 kubectl -n fcg rollout status deploy/redis --timeout=120s
 kubectl -n fcg rollout status deploy/mongo --timeout=180s
+kubectl -n fcg rollout status deploy/elasticsearch --timeout=240s
 
 Write-Host "6) APIs (from sibling repos)"
 kubectl apply -f "$root\fiap-cloud-games-users-api\k8s"

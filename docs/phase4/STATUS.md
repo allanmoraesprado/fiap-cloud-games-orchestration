@@ -5,8 +5,8 @@
 | Marco | Status | Dependências | Testes | Commit | Observações |
 |---|---|---|---|---|---|
 | P4-M0 | APROVADO | — | baseline 71/71 | orchestration (ver CHECKPOINTS) | Auditoria, plano, matriz, custos, riscos. Bloqueio Azure identificado (K01) |
-| P4-M1 | EM EXECUÇÃO | M0 | — | — | Independente de Azure; validação no Elastic Cloud no M6 |
-| P4-M2 | NÃO INICIADO | M0 | — | — | Validação local (`terraform validate`); provisionamento no M5 |
+| P4-M1 | APROVADO (local) | M0 | 70/70 (54 unit + 16 integração ES real); smoke Compose 0 falhas | catalog-api `b2a66b5`; orchestration (CP-02) | Busca, fuzzy, relevância, sincronização, reindexação e queda/recuperação validados. Elastic Cloud: PENDENTE (M6) |
+| P4-M2 | EM EXECUÇÃO | M0 | — | — | Validação local (`terraform validate`); provisionamento no M5 |
 | P4-M3 | NÃO INICIADO | M0, integração com M2 | — | — | Validação real depende do M5 |
 | P4-M4 | NÃO INICIADO | M0, integração com M2/M3 | — | — | CI pode rodar de verdade no GitHub; CD depende do M5 |
 | P4-M5 | BLOQUEADO | M2, M3, M4, X1–X4 | — | — | Assinatura Azure `Warned`/inacessível; autorização de custo; Elastic Cloud |

@@ -1,12 +1,14 @@
 <#
 .SYNOPSIS
-  FIAP Cloud Games - Phase 3 smoke test for the Docker Compose stack, through the Kong gateway.
+  FIAP Cloud Games - smoke test for the Docker Compose stack, through the Kong gateway.
 
 .DESCRIPTION
   Assumes the stack is already running from this repository:
       docker compose up -d --build
   Exercises the main flow through Kong (register, login, cached games list, approved purchase,
-  payment status query, library), optionally a rejected purchase, then checks the Prometheus
+  payment status query, library), optionally a rejected purchase, the Elasticsearch search
+  (exact, fuzzy, empty, validation, create/update/delete synchronization, reindex and, with
+  -SearchOutage, an engine outage followed by recovery), then checks the Prometheus
   targets and the Notifications Function logs in Loki. Calls are paced (~0.7 s) to stay under
   the Kong rate limit (5 req/s). Exit code 0 = every check passed, 1 = at least one failed.
   Windows PowerShell 5.1 compatible. Only local/dev placeholders are used.
@@ -14,12 +16,18 @@
 .EXAMPLE
   .\scripts\smoke-compose.ps1
   .\scripts\smoke-compose.ps1 -GatewayUrl http://localhost:8000 -SkipRejected -SkipLoki
+  .\scripts\smoke-compose.ps1 -SearchOutage
 #>
 param(
   [string]$GatewayUrl    = "http://localhost:8000",
   [string]$PrometheusUrl = "http://localhost:9090",
   [string]$LokiUrl       = "http://localhost:3100",
+  # Seeded local/dev administrator (placeholder credentials of the local stack).
+  [string]$AdminEmail    = "admin@fcg.com",
+  [string]$AdminPassword = "Admin@123",
   [switch]$SkipRejected,
+  [switch]$SkipSearch,
+  [switch]$SearchOutage,
   [switch]$SkipPrometheus,
   [switch]$SkipLoki
 )
@@ -46,7 +54,7 @@ function Invoke-Api([string]$Method, [string]$Url, [string]$Token, [string]$Body
     if ($null -eq $resp) { throw }
     $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
     $content = $reader.ReadToEnd()
-    return @{ Status = [int]$resp.StatusCode; Headers = @{}; Body = $content }
+    return @{ Status = [int]$resp.StatusCode; Headers = $resp.Headers; Body = $content }
   } finally {
     Pace
   }
@@ -67,8 +75,36 @@ function Wait-Payment([string]$OrderId, [string]$Token) {
   return $p
 }
 
+function Get-AdminToken() {
+  if (-not $script:adminToken) {
+    $r = Invoke-Api "POST" "$GatewayUrl/api/auth/login" $null (@{ email = $AdminEmail; password = $AdminPassword } | ConvertTo-Json -Compress)
+    if ($r.Status -eq 200) { $script:adminToken = ($r.Body | ConvertFrom-Json).token }
+  }
+  return $script:adminToken
+}
+
+# docker writes progress to stderr; under PowerShell 5.1 with ErrorActionPreference=Stop that
+# would abort the script, so it is relaxed for the call. Honors COMPOSE_PROJECT_NAME.
+function Invoke-Compose([string[]]$ComposeArgs) {
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { & docker compose @ComposeArgs 2>&1 | Out-Null } finally { $ErrorActionPreference = $previous }
+}
+
+function Search-Games([string]$Text, [string]$Token, [string]$Extra = "") {
+  return Invoke-Api "GET" ("$GatewayUrl/api/games/search?q=" + [uri]::EscapeDataString($Text) + $Extra) $Token $null
+}
+
+# Parsed items of a search response (empty when the call did not return 200). Callers wrap the
+# result in @() because PowerShell 5.1 unrolls single-item arrays and PSCustomObject has no Count.
+function Get-SearchItems($response) {
+  if ($response.Status -ne 200) { return @() }
+  $parsed = $response.Body | ConvertFrom-Json
+  return @($parsed.items)
+}
+
 Write-Host ""
-Write-Host "== FCG Phase 3 smoke test (Docker Compose, through Kong at $GatewayUrl)" -ForegroundColor Cyan
+Write-Host "== FCG smoke test (Docker Compose, through Kong at $GatewayUrl)" -ForegroundColor Cyan
 $stamp    = Get-Date -Format "yyyyMMddHHmmss"
 $email    = "smoke.$stamp@fcg.com"
 $password = "Smoke@123"
@@ -131,9 +167,8 @@ if (-not $SkipRejected) {
   Write-Host "[9] Rejected purchase (price above the 1000 limit)"
   $expensive = $games | Where-Object { $_.price -gt 1000 } | Select-Object -First 1
   if (-not $expensive) {
-    $adminLogin = Invoke-Api "POST" "$GatewayUrl/api/auth/login" $null '{"email":"admin@fcg.com","password":"Admin@123"}'
-    if ($adminLogin.Status -eq 200) {
-      $adminToken = ($adminLogin.Body | ConvertFrom-Json).token
+    $adminToken = Get-AdminToken
+    if ($adminToken) {
       $created = Invoke-Api "POST" "$GatewayUrl/api/games" $adminToken '{"title":"Smoke Expensive Game","description":"Priced above the payment limit (smoke test).","genre":"Test","price":1500,"releaseDate":"2026-01-01T00:00:00Z"}'
       if ($created.Status -eq 201) { $expensive = $created.Body | ConvertFrom-Json; Info "created 'Smoke Expensive Game' (1500) as admin" }
     }
@@ -148,6 +183,82 @@ if (-not $SkipRejected) {
       if ($status2 -eq "Rejected") { Pass "payment status Rejected for orderId $orderId2" } else { Fail "rejected purchase: expected Rejected, got $status2 (HTTP $($pay2.Status))" }
     } else { Fail "acquire (expensive): expected 202, got $($acq2.Status)" }
   } else { Fail "no game above 1000 available and could not create one" }
+}
+
+# 12) Search (Elasticsearch) through Kong
+if (-not $SkipSearch) {
+  Write-Host "[12] Search (Elasticsearch) through Kong"
+  $anonSearch = Invoke-Api "GET" "$GatewayUrl/api/games/search?q=cosmic" $null $null
+  if ($anonSearch.Status -eq 401) { Pass "GET /api/games/search without token -> 401 from Kong" } else { Fail "search without token: expected 401, got $($anonSearch.Status)" }
+
+  # On a fresh stack the reconciliation job fills the index a few seconds after startup.
+  $exact = $null
+  for ($i = 0; $i -lt 20; $i++) {
+    $exact = Search-Games "Cosmic Odyssey" $token
+    if (@(Get-SearchItems $exact).Count -gt 0) { break }
+    Start-Sleep -Seconds 3
+  }
+  $items = @(Get-SearchItems $exact)
+  $top = if ($items.Count -gt 0) { $items[0].title } else { "-" }
+  if ($top -eq "Cosmic Odyssey") { Pass "exact 'Cosmic Odyssey' -> top hit '$top' (score $($items[0].score), total $(($exact.Body | ConvertFrom-Json).total))" } else { Fail "exact search: status $($exact.Status), top hit '$top'" }
+
+  $typo = Search-Games "Cosmik Odisey" $token
+  $items = @(Get-SearchItems $typo)
+  $top = if ($items.Count -gt 0) { $items[0].title } else { "-" }
+  if ($top -eq "Cosmic Odyssey") { Pass "fuzzy 'Cosmik Odisey' -> top hit '$top'" } else { Fail "fuzzy search: status $($typo.Status), top hit '$top'" }
+
+  $none = Search-Games "zzqxv blorpt" $token
+  if ($none.Status -eq 200 -and ($none.Body | ConvertFrom-Json).total -eq 0) { Pass "unknown terms -> 200 with total 0" } else { Fail "no-result search: status $($none.Status) $($none.Body)" }
+
+  $bad = Search-Games "a" $token
+  if ($bad.Status -eq 400) { Pass "q='a' -> 400 (validation)" } else { Fail "invalid query: expected 400, got $($bad.Status)" }
+  $badPage = Search-Games "cosmic" $token "&pageSize=500"
+  if ($badPage.Status -eq 400) { Pass "pageSize=500 -> 400 (validation)" } else { Fail "invalid page size: expected 400, got $($badPage.Status)" }
+
+  $adminToken = Get-AdminToken
+  if (-not $adminToken) { Fail "admin login failed; index synchronization checks skipped" } else {
+    $title = "Nebula Smoke $stamp"
+    $create = Invoke-Api "POST" "$GatewayUrl/api/games" $adminToken (@{ title = $title; description = "Created by the smoke test."; genre = "Simulation"; price = 19.9; releaseDate = "2026-01-01T00:00:00Z" } | ConvertTo-Json -Compress)
+    if ($create.Status -eq 201) {
+      $newId = ($create.Body | ConvertFrom-Json).id
+      $hit = @(Get-SearchItems (Search-Games "Nebla Smoke $stamp" $token)) | Where-Object { $_.id -eq $newId }
+      if ($hit) { Pass "created '$title' -> found right away by the misspelled 'Nebla Smoke $stamp'" } else { Fail "created game not found in the index" }
+
+      $newTitle = "Quasar Smoke $stamp"
+      $update = Invoke-Api "PUT" "$GatewayUrl/api/games/$newId" $adminToken (@{ title = $newTitle; description = "Updated by the smoke test."; genre = "Simulation"; price = 24.9; releaseDate = "2026-01-01T00:00:00Z" } | ConvertTo-Json -Compress)
+      $updItems = @(Get-SearchItems (Search-Games $newTitle $token))
+      if ($update.Status -eq 200 -and $updItems.Count -gt 0 -and $updItems[0].id -eq $newId -and $updItems[0].title -eq $newTitle -and [decimal]$updItems[0].price -eq 24.9) { Pass "updated to '$newTitle' -> index returns the new title and price" } else { Fail "update not reflected in the index (PUT $($update.Status))" }
+
+      $del = Invoke-Api "DELETE" "$GatewayUrl/api/games/$newId" $adminToken $null
+      $still = @(Get-SearchItems (Search-Games $newTitle $token)) | Where-Object { $_.id -eq $newId }
+      if ($del.Status -eq 204 -and -not $still) { Pass "deleted game -> no longer returned by search" } else { Fail "deleted game still searchable (DELETE $($del.Status))" }
+    } else { Fail "admin create game: expected 201, got $($create.Status) $($create.Body)" }
+
+    $reindex = Invoke-Api "POST" "$GatewayUrl/api/games/search/reindex" $adminToken $null
+    if ($reindex.Status -eq 200) { Pass "POST /api/games/search/reindex (Admin) -> 200, indexed $(($reindex.Body | ConvertFrom-Json).indexed) games" } else { Fail "reindex: expected 200, got $($reindex.Status)" }
+    $reindexUser = Invoke-Api "POST" "$GatewayUrl/api/games/search/reindex" $token $null
+    if ($reindexUser.Status -eq 403) { Pass "reindex as a regular user -> 403" } else { Fail "reindex as user: expected 403, got $($reindexUser.Status)" }
+
+    if ($SearchOutage) {
+      Write-Host "[12b] Search engine outage (docker compose stop/start elasticsearch)"
+      Invoke-Compose @("stop", "elasticsearch")
+      $down = Search-Games "Cosmic Odyssey" $token
+      $retry = if ($down.Headers) { [string]$down.Headers["Retry-After"] } else { "" }
+      if ($down.Status -eq 503) { Pass "search with Elasticsearch stopped -> 503 (Retry-After: $retry)" } else { Fail "search during outage: expected 503, got $($down.Status)" }
+      $outTitle = "Outage Smoke $stamp"
+      $outCreate = Invoke-Api "POST" "$GatewayUrl/api/games" $adminToken (@{ title = $outTitle; description = "Created while the search engine was down."; genre = "Test"; price = 9.9; releaseDate = "2026-01-01T00:00:00Z" } | ConvertTo-Json -Compress)
+      if ($outCreate.Status -eq 201) { Pass "create game during the outage -> 201 (database first, index deferred)" } else { Fail "create during outage: expected 201, got $($outCreate.Status)" }
+      Invoke-Compose @("start", "elasticsearch")
+      $outId = if ($outCreate.Status -eq 201) { ($outCreate.Body | ConvertFrom-Json).id } else { "" }
+      $recovered = $false
+      $sw = [Diagnostics.Stopwatch]::StartNew()
+      while (-not $recovered -and $sw.Elapsed.TotalSeconds -lt 180) {
+        Start-Sleep -Seconds 5
+        $recovered = [bool](@(Get-SearchItems (Search-Games $outTitle $token)) | Where-Object { $_.id -eq $outId })
+      }
+      if ($recovered) { Pass "engine back: reconciliation indexed the game created during the outage ($([int]$sw.Elapsed.TotalSeconds)s)" } else { Fail "game created during the outage not indexed within 180s" }
+    }
+  }
 }
 
 # 10) Prometheus targets
