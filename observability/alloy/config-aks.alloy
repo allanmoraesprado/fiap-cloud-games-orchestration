@@ -1,0 +1,66 @@
+// ------------------------------------------------------------------
+// FIAP Cloud Games - Grafana Alloy on AKS
+// Tails the logs of every pod in the fcg namespace through the Kubernetes API (no hostPath,
+// no privileged access; read-only namespaced Role in k8s/azure/32-alloy.yaml) and ships them to
+// Loki. Labels mirror the Compose setup (platform="fcg", compose_service=<app>) so the
+// "FCG Logs" dashboard and its LogQL queries work unchanged; `cluster="aks"` tells them apart.
+// ------------------------------------------------------------------
+
+discovery.kubernetes "pods" {
+  role = "pod"
+  namespaces {
+    names = ["fcg"]
+  }
+}
+
+discovery.relabel "pods" {
+  targets = discovery.kubernetes.pods.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    regex         = ".+"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "compose_service"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    target_label  = "job"
+    replacement   = "fcg/$1"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+}
+
+loki.source.kubernetes "pods" {
+  targets    = discovery.relabel.pods.output
+  forward_to = [loki.process.static.receiver]
+}
+
+loki.process "static" {
+  stage.static_labels {
+    values = {
+      platform = "fcg",
+      cluster  = "aks",
+    }
+  }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

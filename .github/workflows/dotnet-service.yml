@@ -1,0 +1,217 @@
+# Reusable CI/CD pipeline for the FIAP Cloud Games .NET services.
+#
+# Called by each service repository (.github/workflows/ci-cd.yml). Two jobs:
+#   ci  - every push / pull request: restore, build, tests, vulnerable-package report,
+#         Docker build (APP_VERSION = commit SHA), Trivy image scan; the scanned image is
+#         handed to the next job as an artifact, so exactly that image is deployed.
+#   cd  - only for `main` (push or manual run) of the service repository, and only when the
+#         repository variable AZURE_DEPLOY_ENABLED is 'true': Azure login through OIDC (no
+#         stored credentials), push to the private ACR tagged with the full commit SHA, render
+#         the service's k8s/azure manifests, apply them (Kubernetes rolling update), wait for the
+#         rollout (automatic rollback on failure) and run a smoke test through the public Kong
+#         gateway that also checks the X-App-Version header of the new pods.
+#
+# Repository variables used by cd (identifiers, not secrets): AZURE_CLIENT_ID, AZURE_TENANT_ID,
+# AZURE_SUBSCRIPTION_ID, ACR_NAME, AKS_NAME, AKS_RESOURCE_GROUP, GATEWAY_URL, AZURE_DEPLOY_ENABLED.
+name: dotnet-service
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: Kubernetes Deployment name (users-api, catalog-api, payments-api, notifications-function)
+        type: string
+        required: true
+      image:
+        description: Image repository name in the ACR (e.g. fcg-users-api)
+        type: string
+        required: true
+      solution:
+        description: Solution file at the repository root
+        type: string
+        required: true
+      dotnet-version:
+        type: string
+        default: "8.0.x"
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  ci:
+    name: CI - build, test, scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Restore
+        run: dotnet restore ${{ inputs.solution }}
+
+      - name: Build
+        run: dotnet build ${{ inputs.solution }} --configuration Release --no-restore
+
+      - name: Test
+        run: >
+          dotnet test ${{ inputs.solution }} --configuration Release --no-build
+          --logger "trx;LogFileName=test-results.trx" --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-${{ inputs.service }}
+          path: TestResults
+          retention-days: 14
+
+      - name: Vulnerable NuGet packages (report)
+        run: dotnet list ${{ inputs.solution }} package --vulnerable --include-transitive | tee vulnerable-packages.txt
+
+      - name: Docker build
+        run: |
+          docker build \
+            --build-arg APP_VERSION=${{ github.sha }} \
+            --tag ${{ inputs.image }}:${{ github.sha }} .
+          docker image inspect ${{ inputs.image }}:${{ github.sha }} --format 'size={{.Size}} revision={{index .Config.Labels "org.opencontainers.image.revision"}}'
+
+      - name: Security scan (Trivy, fail on fixable CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ inputs.image }}:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Security gate (CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ inputs.image }}:${{ github.sha }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+
+      - name: Save image for deployment
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: docker save ${{ inputs.image }}:${{ github.sha }} | gzip > image.tar.gz
+
+      - name: Upload image
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ inputs.service }}
+          path: image.tar.gz
+          retention-days: 3
+
+  cd:
+    name: CD - publish to ACR and roll out on AKS
+    needs: ci
+    # Never for pull requests; only main of the service repository, and only when the Azure
+    # environment exists (repository variable). The OIDC trust is limited to refs/heads/main too.
+    if: >
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      vars.AZURE_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: deploy-${{ inputs.service }}
+      cancel-in-progress: false
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+      ACR_LOGIN_SERVER: ${{ vars.ACR_NAME }}.azurecr.io
+    steps:
+      - name: Checkout service
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Checkout orchestration (deployment scripts)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: allanmoraesprado/fiap-cloud-games-orchestration
+          path: .orchestration
+
+      - name: Download image
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-${{ inputs.service }}
+
+      - name: Azure login (OIDC, no stored credentials)
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Push image to ACR (tag = commit SHA)
+        run: |
+          az acr login --name "${{ vars.ACR_NAME }}"
+          docker load --input image.tar.gz
+          docker tag "${{ inputs.image }}:$IMAGE_TAG" "$ACR_LOGIN_SERVER/${{ inputs.image }}:$IMAGE_TAG"
+          docker push "$ACR_LOGIN_SERVER/${{ inputs.image }}:$IMAGE_TAG"
+          az acr repository show --name "${{ vars.ACR_NAME }}" --image "${{ inputs.image }}:$IMAGE_TAG" --query "{image:name,digest:digest,created:createdTime}" -o table
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@bda439f5f36b99b262ebdcd3613869bddb064c8e # v5.2.0
+
+      - name: Setup kubelogin
+        uses: azure/use-kubelogin@0ce7c36141aa27d4934872cf00b0120804c98a29 # v1.3
+        with:
+          kubelogin-version: latest
+
+      - name: AKS credentials (Entra ID)
+        run: |
+          az aks get-credentials --resource-group "${{ vars.AKS_RESOURCE_GROUP }}" --name "${{ vars.AKS_NAME }}" --overwrite-existing --only-show-errors
+          kubelogin convert-kubeconfig -l azurecli
+
+      - name: Render manifests
+        run: |
+          mkdir -p .rendered
+          for f in k8s/azure/*.yaml; do
+            envsubst '${ACR_LOGIN_SERVER} ${IMAGE_TAG}' < "$f" > ".rendered/$(basename "$f")"
+          done
+          if grep -n '\${' .rendered/*.yaml | grep -E 'ACR_LOGIN_SERVER|IMAGE_TAG'; then echo "unrendered placeholder"; exit 1; fi
+          grep -n "image:" .rendered/deployment.yaml
+
+      - name: Deploy (rolling update)
+        run: |
+          kubectl apply -f .rendered/
+          kubectl -n fcg annotate deployment/${{ inputs.service }} \
+            kubernetes.io/change-cause="${{ github.repository }}@${{ github.sha }} run ${{ github.run_id }}" --overwrite
+
+      - name: Verify rollout (rollback on failure)
+        run: |
+          if ! kubectl -n fcg rollout status deployment/${{ inputs.service }} --timeout=300s; then
+            echo "::error::rollout failed - rolling back"
+            kubectl -n fcg describe deployment/${{ inputs.service }} | tail -30
+            kubectl -n fcg get pods -l app=${{ inputs.service }} -o wide
+            kubectl -n fcg rollout undo deployment/${{ inputs.service }}
+            kubectl -n fcg rollout status deployment/${{ inputs.service }} --timeout=300s || true
+            exit 1
+          fi
+          kubectl -n fcg rollout history deployment/${{ inputs.service }} | tail -5
+          kubectl -n fcg get pods -l app=${{ inputs.service }} -o custom-columns=POD:.metadata.name,IMAGE:.spec.containers[0].image,READY:.status.containerStatuses[0].ready
+
+      - name: Smoke test through the gateway
+        run: bash .orchestration/scripts/ci/smoke-service.sh "${{ inputs.service }}" "${{ vars.GATEWAY_URL }}" "${{ github.sha }}"
+
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ inputs.service }}"
+            echo "- commit: \`${{ github.sha }}\`"
+            echo "- image: \`$ACR_LOGIN_SERVER/${{ inputs.image }}:$IMAGE_TAG\`"
+            echo "- gateway: ${{ vars.GATEWAY_URL }}"
+          } >> "$GITHUB_STEP_SUMMARY"

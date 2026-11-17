@@ -1,0 +1,81 @@
+# Validation of the orchestration repository (no cloud access): Terraform format/validation,
+# AKS manifests (platform + every service) against the Kubernetes schemas, Docker Compose model,
+# shell scripts and GitHub workflow syntax.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform fmt + validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.17.2"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  manifests:
+    name: Kubernetes manifests (kubeconform)
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFORM_VERSION: v0.8.0
+    steps:
+      # Service repositories side by side, as in a local workspace, so their k8s/azure folders
+      # are rendered and validated together with the platform layer.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: fiap-cloud-games-orchestration
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: allanmoraesprado/fiap-cloud-games-users-api
+          path: fiap-cloud-games-users-api
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: allanmoraesprado/fiap-cloud-games-catalog-api
+          path: fiap-cloud-games-catalog-api
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: allanmoraesprado/fiap-cloud-games-payments-api
+          path: fiap-cloud-games-payments-api
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: allanmoraesprado/fiap-cloud-games-notifications-function
+          path: fiap-cloud-games-notifications-function
+      - name: Install kubeconform (checksum verified)
+        run: |
+          base="https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM_VERSION"
+          curl -sSLO "$base/kubeconform-linux-amd64.tar.gz"
+          curl -sSL "$base/CHECKSUMS" | grep ' kubeconform-linux-amd64.tar.gz$' | sha256sum -c -
+          tar -xzf kubeconform-linux-amd64.tar.gz kubeconform
+          sudo install kubeconform /usr/local/bin/kubeconform
+      - name: Render and validate
+        run: bash fiap-cloud-games-orchestration/scripts/azure/validate-manifests.sh
+
+  compose-and-scripts:
+    name: Compose model, shell scripts, workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: docker compose config
+        run: docker compose config --quiet
+      - name: shellcheck (errors)
+        run: shellcheck --severity=error scripts/azure/*.sh scripts/ci/*.sh k8s/*.sh
+      - name: actionlint
+        run: |
+          bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color

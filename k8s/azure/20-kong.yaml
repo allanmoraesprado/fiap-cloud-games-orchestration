@@ -1,0 +1,166 @@
+# Kong Gateway 3.9 (DB-less) on AKS - the only public entry point.
+#
+# Kong OSS cannot resolve vault references in jwt_secrets, so the declarative file is rendered
+# at pod start: the init container replaces the development placeholder of gateway/kong.yml
+# (ConfigMap kong-declarative-template, same single source of truth as Compose) with the JWT
+# signing key mounted from Key Vault, into an in-memory volume. The pod fails to start if the
+# placeholder is still present.
+#
+# Admin API bound to localhost only (in DB-less mode POST /config could replace the routes);
+# Status API (/metrics, /status) on the pod IP for probes and Prometheus.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong
+  namespace: fcg
+  labels:
+    app: kong
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kong
+  template:
+    metadata:
+      labels:
+        app: kong
+        azure.workload.identity/use: "true"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8100"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: kong
+      initContainers:
+        - name: render-config
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              key="$(cat /mnt/secrets-store/jwt-signing-key)"
+              sed "s|dev-only-change-me-please-min-32-characters-placeholder|${key}|g" /kong-template/kong.yml > /kong/declarative/kong.yml
+              if grep -q "dev-only-change-me" /kong/declarative/kong.yml; then echo "JWT placeholder not replaced" >&2; exit 1; fi
+              echo "kong.yml rendered with the Key Vault JWT signing key"
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              memory: "32Mi"
+          volumeMounts:
+            - name: template
+              mountPath: /kong-template
+              readOnly: true
+            - name: declarative
+              mountPath: /kong/declarative
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      containers:
+        - name: kong
+          image: kong:3.9
+          ports:
+            - name: proxy
+              containerPort: 8000
+            - name: status
+              containerPort: 8100
+          env:
+            - name: KONG_DATABASE
+              value: "off"
+            - name: KONG_DECLARATIVE_CONFIG
+              value: "/kong/declarative/kong.yml"
+            - name: KONG_PROXY_LISTEN
+              value: "0.0.0.0:8000"
+            - name: KONG_ADMIN_LISTEN
+              value: "127.0.0.1:8001"
+            - name: KONG_STATUS_LISTEN
+              value: "0.0.0.0:8100"
+            - name: KONG_PROXY_ACCESS_LOG
+              value: "/dev/stdout"
+            - name: KONG_ADMIN_ACCESS_LOG
+              value: "/dev/stdout"
+            - name: KONG_PROXY_ERROR_LOG
+              value: "/dev/stderr"
+            - name: KONG_ADMIN_ERROR_LOG
+              value: "/dev/stderr"
+            - name: KONG_LOG_LEVEL
+              value: "notice"
+            # nginx defaults to one worker per node CPU; bound it so memory stays within the limit.
+            - name: KONG_NGINX_WORKER_PROCESSES
+              value: "2"
+            # No KONG_TRUSTED_IPS: the Service keeps the client source IP (externalTrafficPolicy:
+            # Local), so rate limiting by IP needs no (spoofable) X-Forwarded-For trust.
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "512Mi"
+          volumeMounts:
+            - name: declarative
+              mountPath: /kong/declarative
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /status
+              port: 8100
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: 8100
+            initialDelaySeconds: 20
+            periodSeconds: 15
+      volumes:
+        - name: template
+          configMap:
+            name: kong-declarative-template
+        - name: declarative
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: kong-secrets
+---
+# Public entry point: Azure Standard Load Balancer with a stable DNS name
+# http://<label>.<region>.cloudapp.azure.com (label rendered from Terraform output kong_dns_label).
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-proxy
+  namespace: fcg
+  annotations:
+    service.beta.kubernetes.io/azure-dns-label-name: "${KONG_DNS_LABEL}"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app: kong
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+---
+# In-cluster status/metrics endpoint (Prometheus); never exposed outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong
+  namespace: fcg
+spec:
+  type: ClusterIP
+  selector:
+    app: kong
+  ports:
+    - name: proxy
+      port: 8000
+      targetPort: 8000
+    - name: status
+      port: 8100
+      targetPort: 8100

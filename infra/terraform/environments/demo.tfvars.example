@@ -1,0 +1,24 @@
+# Copy to infra/terraform/terraform.tfvars (git-ignored) and fill in. No secret goes here:
+# generated secrets are created in Key Vault by Terraform, and the Elastic Cloud API key is
+# passed only through the environment (TF_VAR_elasticsearch_api_key), never written to disk.
+
+subscription_id = "00000000-0000-0000-0000-000000000000"
+environment     = "demo"
+location        = "eastus2"
+
+node_vm_size = "Standard_D4as_v5" # alternatives: Standard_D2as_v5 (x2 nodes), Standard_B2ms
+node_count   = 1
+
+# Optional: restrict the Kubernetes API to these CIDRs (leave empty when GitHub-hosted runners deploy).
+api_server_authorized_ip_ranges = []
+
+github_owner = "allanmoraesprado"
+
+# Budget alerts (billing currency). Use a real mailbox you read.
+budget_amount         = 50
+budget_contact_emails = ["owner@example.com"]
+budget_start_date     = "2026-12-01T00:00:00Z"
+
+# Elastic Cloud endpoint (HTTPS). The API key goes through TF_VAR_elasticsearch_api_key.
+elasticsearch_url            = "https://<deployment>.es.<region>.azure.elastic-cloud.com:443"
+elasticsearch_secret_version = 1

@@ -1,0 +1,106 @@
+# PostgreSQL 16 on AKS: StatefulSet with an Azure Disk (managed-csi) PVC. Hosts fcg_users and
+# fcg_catalog. The superuser password is read from the Key Vault-mounted file
+# (POSTGRES_PASSWORD_FILE); the services receive full connection strings from Key Vault too.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: fcg
+data:
+  01-create-databases.sql: |
+    CREATE DATABASE fcg_users;
+    CREATE DATABASE fcg_catalog;
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: fcg
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: postgres
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "fcg"
+            - name: POSTGRES_DB
+              value: "fcg"
+            - name: POSTGRES_PASSWORD_FILE
+              value: "/mnt/secrets-store/postgres-admin-password"
+            # Azure Disk volumes contain lost+found: keep the cluster in a subdirectory.
+            - name: PGDATA
+              value: "/var/lib/postgresql/data/pgdata"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "1Gi"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "fcg"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "fcg"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: postgres-secrets
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: managed-csi
+        resources:
+          requests:
+            storage: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: fcg
+spec:
+  type: ClusterIP
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

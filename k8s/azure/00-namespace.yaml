@@ -1,0 +1,8 @@
+# Application namespace on AKS. GitHub Actions deploys only inside it
+# (Azure Kubernetes Service RBAC Writer scoped to this namespace).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fcg
+  labels:
+    app.kubernetes.io/part-of: fiap-cloud-games

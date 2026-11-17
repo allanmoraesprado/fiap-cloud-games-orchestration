@@ -81,9 +81,11 @@ Formato: contexto → decisão → consequências. Decisões podem ser revistas;
   Grafana e bancos ficam internos (acesso por `kubectl port-forward`).
 
 ## D14 — Observabilidade no AKS
-- **Decisão**: Prometheus com descoberta de pods (`kubernetes_sd_configs`, RBAC mínimo de leitura); Loki
-  single-binary; Alloy como DaemonSet lendo logs dos pods via API do Kubernetes; Grafana provisionado com os
-  mesmos dashboards da Fase 3.
+- **Decisão**: Prometheus com descoberta de pods (`kubernetes_sd_configs`, Role de leitura no namespace);
+  Loki single-binary; Alloy com **uma réplica** lendo logs pela API do Kubernetes (`loki.source.kubernetes`,
+  sem hostPath nem privilégios) — revisado em relação ao DaemonSet previsto; Grafana provisionado com os
+  mesmos dashboards. Rótulos `job`, `platform="fcg"` e `compose_service` iguais aos do Compose para que
+  os dashboards funcionem sem alteração (`cluster="aks"` diferencia).
 
 ## D15 — Notifications Function no AKS
 - **Decisão**: manter o container do host Azure Functions (isolated) no AKS consumindo o Kafka interno, como na
@@ -96,3 +98,31 @@ Formato: contexto → decisão → consequências. Decisões podem ser revistas;
 ## D17 — Testes de integração com Testcontainers
 - **Decisão**: testes de integração do Elasticsearch usam Testcontainers (Elasticsearch real em container),
   executados localmente e no CI (runners Linux do GitHub possuem Docker). Categoria `Integration` para filtro.
+
+## D18 — Segredos fora do state do Terraform
+- **Decisão**: `ephemeral "random_password"` + `azurerm_key_vault_secret.value_wo` (write-only, azurerm 5.x /
+  Terraform ≥ 1.11); API key do Elastic Cloud por variável `ephemeral`. Rotação por `secrets_version`.
+- **Consequências**: o state não contém valores sensíveis; o operador lê valores pontuais no Key Vault
+  (papel `Key Vault Secrets Officer`).
+
+## D19 — Ensaio local dos manifests do AKS
+- **Contexto**: assinatura Azure bloqueada (K01).
+- **Decisão**: `scripts/azure/simulate-local.sh` aplica os mesmos `k8s/azure` no Kubernetes do Docker Desktop
+  (namespace `fcg-sim`), trocando apenas CSI→Secret local, `managed-csi`→`hostpath`, LoadBalancer→NodePort e
+  imagens do ACR→imagens locais.
+- **Consequências**: valida localmente arquivos de segredo, `*_FILE`, renderização do Kong, autenticação do
+  Redis, `KeyPerFile`, descoberta do Prometheus, Alloy→Loki e rolling update. **Não substitui** a validação
+  real de CSI/Workload Identity/ACR/LoadBalancer (M5/M6).
+
+## D20 — Usuário não-root numérico nas imagens
+- **Decisão**: `USER $APP_UID` (1654) nos Dockerfiles .NET; manifests com `runAsNonRoot: true`.
+- **Motivo**: o kubelet não consegue verificar `runAsNonRoot` com usuário nominal (`USER app`) — falha
+  encontrada no ensaio local.
+
+## D21 — Kong com workers limitados
+- **Decisão**: `KONG_NGINX_WORKER_PROCESSES=2`. Com o padrão (`auto` = 1 worker por CPU do nó) o pod excedia o
+  limite de memória (workers mortos por OOM no ensaio).
+
+## D22 — Senha do administrador semeado
+- **Decisão**: `Seed:AdminPassword` configurável (padrão de desenvolvimento em `appsettings.json`); no AKS vem
+  do Key Vault e o usuário comum de demonstração não é semeado (`Seed__UserPassword=""`).

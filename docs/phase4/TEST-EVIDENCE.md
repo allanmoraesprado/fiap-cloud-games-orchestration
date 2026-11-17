@@ -106,3 +106,57 @@ Observações:
 - Checagem do Loki pulada nesta stack isolada: o Alloy filtra o projeto `fcg-orchestration` (comportamento
   da Fase 3, inalterado).
 - Validação contra o **Elastic Cloud**: PENDENTE (P4-M5/M6).
+
+## P4-M2/M3/M4 — validações locais (2026-11-17)
+
+### Terraform (`infra/terraform`, azurerm 5.14.0, Terraform 1.17.2)
+
+```
+terraform fmt -check -recursive   -> sem diferenças
+terraform validate                -> Success! The configuration is valid.
+```
+Primeira validação reprovou (`Insufficient node_provisioning_profile blocks`, bloco obrigatório no azurerm 5.x) e
+foi corrigida com `node_provisioning_profile { mode = "Manual" }`. `terraform plan/apply`: **BLOQUEADO** (K01).
+
+### Manifests (kubeconform 0.8.0, Kubernetes 1.33 + CRD SecretProviderClass)
+
+```
+bash scripts/azure/validate-manifests.sh
+Summary: 55 resources found in 25 files - Valid: 55, Invalid: 0, Errors: 0, Skipped: 0
+```
+
+### Workflows (actionlint 1.7.12)
+
+`dotnet-service.yml`, `ci.yml` (orquestração) e os 4 `ci-cd.yml` dos serviços: 0 problemas.
+
+### Testes dos serviços (após KeyPerFile, seed configurável, `X-App-Version`, `USER $APP_UID`)
+
+| Repositório | Resultado |
+|---|---|
+| users-api | 26 aprovados (21 + 5 de `RuntimeConfiguration`) |
+| catalog-api | 75 aprovados (70 + 5) — inclui 16 de integração com Elasticsearch real |
+| payments-api | 20 aprovados (15 + 5) |
+| notifications-function | 13 aprovados |
+| **Total** | **134 / 134** |
+
+### Ensaio dos manifests do AKS no Kubernetes local (`scripts/azure/simulate-local.sh`, namespace `fcg-sim`)
+
+Mesmos arquivos de `k8s/azure` (plataforma) e `k8s/azure` dos 4 serviços, com apenas CSI→Secret local,
+`managed-csi`→`hostpath`, LoadBalancer→NodePort 30180 e imagens locais `:sim`.
+
+| Verificação | Resultado |
+|---|---|
+| Plataforma | Postgres/Kafka/Mongo (StatefulSet + PVC), Redis com `requirepass` do arquivo, Kafka topics Job `Completed`, Kong (init container renderizou `kong.yml` com a chave do segredo), Prometheus, Loki, Alloy, Grafana: todos `Running` |
+| Aplicações | users-api ×2, catalog-api ×2, payments-api, notifications-function `Running`, usuário UID 1654, credenciais lidas por `KeyPerFile` |
+| Smoke completo pelo Kong (`smoke-compose.ps1 -GatewayUrl http://localhost:30180 -AdminPassword <segredo>`) | **SMOKE PASSED (0 failures)**: 401 sem token, registro/login, cache MISS→HIT (Redis com senha), compra aprovada + MongoDB, biblioteca, compra rejeitada criada pelo admin semeado com a senha do "Key Vault", busca exata/fuzzy/vazia/validação, sincronização create/update/delete, reindex 200/403 |
+| Smoke do CD (`scripts/ci/smoke-service.sh`) | users-api, catalog-api, payments-api: PASS com `X-App-Version` correto; notifications-function: PASS (host iniciado) |
+| Prometheus | targets `users-api` ×2, `catalog-api` ×2, `payments-api`, `kong`, `prometheus` — todos `up`, rótulo `version` presente |
+| Loki/Alloy | 15 serviços com logs (`compose_service`); `[WELCOME EMAIL]` encontrado com rótulos `platform="fcg"`, `cluster="aks"` |
+| **Rolling update sob carga** (catalog-api 2 réplicas, `kubectl set image` para `sim2`, ~1,5 req/s pelo Kong) | **219 requisições, 219 × HTTP 200, 0 falhas**; `X-App-Version` 61× antiga → 158× nova; rollout em 28 s; `rollout history` com `change-cause` |
+
+Falhas encontradas e corrigidas pelo ensaio: Kong com 16 workers excedendo o limite de memória (D21);
+`runAsNonRoot` incompatível com `USER app` (D20); transformação do script com CRLF (Git Bash). Durante o
+ensaio a VM do Docker Desktop caiu (distro `docker-desktop` parada) e foi reiniciada.
+
+**Não validado localmente (exige Azure, M5/M6)**: Secrets Store CSI + Workload Identity reais, ACR privado,
+LoadBalancer público/DNS, Entra ID/kubelogin, OIDC do GitHub, Elastic Cloud.

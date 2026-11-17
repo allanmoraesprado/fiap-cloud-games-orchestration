@@ -4,7 +4,7 @@
 
 ## Estado consolidado
 
-Ver [STATUS.md](STATUS.md). Resumo: M0 aprovado; M1 aprovado localmente (Elastic Cloud pendente); M2 em execução; M5 bloqueado pela assinatura Azure.
+Ver [STATUS.md](STATUS.md). Resumo: M0 aprovado; M1 aprovado localmente (Elastic Cloud pendente); M2 aprovado (declarativo); M3 implementado (validação real pendente); M4 em execução (CI real); M5 bloqueado pela assinatura Azure.
 
 ## Workspace
 
@@ -30,8 +30,9 @@ Ver [STATUS.md](STATUS.md). Resumo: M0 aprovado; M1 aprovado localmente (Elastic
 
 - Pré-existentes (não criados nesta fase, não alterar): projeto Compose `fcg-orchestration` (portas 5433/6380/27018…),
   namespace `fcg` no Kubernetes do Docker Desktop, containers `lurkly-*` de outro projeto.
-- Criado para smoke da Fase 4: projeto Compose `fcg-p4` (portas 18000/18082/19090/19200…, env file no diretório
-  temporário da sessão). Remover com `docker compose -p fcg-p4 down -v` quando não for mais necessário.
+- Projeto Compose `fcg-p4` (smoke do M1): já removido (`down -v`).
+- Ensaio do AKS: namespace `fcg-sim` (criado por mim; `bash scripts/azure/simulate-local.sh down` remove). Imagens locais `fcg-*:sim`.
+- Ferramentas portáteis (não instaladas no sistema) no diretório temporário da sessão: terraform 1.17.2, kubeconform 0.8.0, actionlint 1.7.12.
 - PowerShell 5.1: `PSCustomObject` único não tem `.Count` — sempre envolver resultados em `@()` nos scripts.
 
 ## Erros / bloqueios conhecidos
@@ -47,10 +48,10 @@ Ver [STATUS.md](STATUS.md). Resumo: M0 aprovado; M1 aprovado localmente (Elastic
 
 ## Tarefas elegíveis
 
-1. P4-M2 — Terraform + manifests do AKS (validação local).
-3. P4-M3 — Key Vault/Workload Identity (código + manifests).
-4. P4-M4 — Workflows GitHub Actions (CI real no GitHub).
+1. P4-M4 — acompanhar o CI real no GitHub (API pública: `https://api.github.com/repos/allanmoraesprado/<repo>/actions/runs`).
+2. P4-M7 — documentação (README central, roteiro do vídeo) com o que já está validado.
+3. Quando a assinatura for liberada: `scripts/azure/preflight.sh` → PROVISIONING.md.
 
 ## Próximo passo exato
 
-Criar `infra/terraform` (Azure) e manifests do AKS conforme [PLAN.md](PLAN.md) §P4-M2 e [DECISIONS.md](DECISIONS.md) D06–D15.
+Verificar o resultado dos workflows de CI recém-publicados e corrigir falhas; depois avançar documentação (M7).

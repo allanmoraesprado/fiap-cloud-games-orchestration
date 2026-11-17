@@ -37,3 +37,22 @@
 - **Pendências**: Elastic Cloud (depende de conta do proprietário); painel de busca no Grafana (M6/M7).
 - **Ambiente local**: stack `fcg-p4` criada para o smoke (removida ao final do marco; ver HANDOFF).
 - **Próxima ação**: P4-M2 (Terraform + manifests do AKS).
+
+## CP-03 — 2026-11-17 — P4-M2, P4-M3 e P4-M4 (preparação local)
+
+- **Objetivo**: infraestrutura declarativa, segurança (Key Vault/Workload Identity) e pipelines prontos e
+  validados sem a assinatura Azure.
+- **Status**: M2 APROVADO (critério: declarativo + validado; provisionamento no M5); M3 PENDENTE (código e
+  manifests validados localmente, validação real no AKS); M4 EM EXECUÇÃO (workflows prontos; CI real a seguir).
+- **Alterações**:
+  - orchestration: `infra/terraform` (RG, VNet, AKS, ACR, Key Vault, identidades, OIDC GitHub, budget, outputs),
+    `k8s/azure` (plataforma), `observability/*-aks*`, `scripts/azure/*` (preflight, deploy, render, ensaio,
+    validação, variáveis GitHub, destruição), `scripts/ci/smoke-service.sh`, workflows `dotnet-service.yml` e
+    `ci.yml`, guias PROVISIONING, DESTROY, CICD, KEYVAULT.
+  - users-api / catalog-api / payments-api: `RuntimeConfiguration` (KeyPerFile + `X-App-Version`), seed do admin
+    configurável (users), Dockerfile (`APP_VERSION`, labels OCI, `USER $APP_UID`), `k8s/azure`, `ci-cd.yml`, testes.
+  - notifications-function: Dockerfile (`APP_VERSION`, labels), `k8s/azure`, `ci-cd.yml`.
+- **Testes**: 134/134; terraform validate OK; kubeconform 55/55; actionlint OK; ensaio local com smoke 0 falhas e
+  rolling update 219/219 HTTP 200.
+- **Bloqueios**: K01 (assinatura Azure).
+- **Próxima ação**: commit/push; observar o CI real no GitHub; corrigir o que falhar.

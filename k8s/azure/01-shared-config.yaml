@@ -1,0 +1,14 @@
+# Non-sensitive settings shared by the .NET services. Every credential comes from Key Vault
+# through the Secrets Store CSI driver (see 03-secret-provider-classes.yaml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fcg-config
+  namespace: fcg
+data:
+  Jwt__Issuer: "FiapCloudGames"
+  Jwt__Audience: "FiapCloudGames"
+  Kafka__BootstrapServers: "kafka:9092"
+  # Directory where the CSI driver mounts this pod's secrets; the APIs load it as configuration
+  # (one file per key, "__" = section separator).
+  SecretsPath: "/mnt/secrets-store"

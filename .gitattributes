@@ -1,0 +1,5 @@
+# Shell scripts and Alloy/Terraform files must keep LF endings (bash breaks on CRLF).
+*.sh text eol=lf
+*.alloy text eol=lf
+*.tf text eol=lf
+*.hcl text eol=lf

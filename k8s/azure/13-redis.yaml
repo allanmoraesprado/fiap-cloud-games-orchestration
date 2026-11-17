@@ -1,0 +1,70 @@
+# Redis 7 on AKS: distributed cache of the CatalogAPI read model. Cache only (no persistence),
+# but password-protected: requirepass comes from the Key Vault-mounted file and CatalogAPI
+# receives the matching connection string from Key Vault.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: fcg
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: redis
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: ["sh", "-c"]
+          args:
+            - exec redis-server --save "" --appendonly no --requirepass "$(cat /mnt/secrets-store/redis-password)"
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              memory: "256Mi"
+          volumeMounts:
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$(cat /mnt/secrets-store/redis-password)\" redis-cli ping | grep -q PONG"]
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "REDISCLI_AUTH=\"$(cat /mnt/secrets-store/redis-password)\" redis-cli ping | grep -q PONG"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+      volumes:
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: redis-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: fcg
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379

@@ -1,0 +1,12 @@
+# Optional remote state for a shared environment. Rename to backend.tf and run
+# `terraform init -migrate-state`. The storage account must exist beforehand and the operator
+# needs "Storage Blob Data Contributor" on the container (use_azuread_auth = true: no keys).
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "rg-fcg-tfstate"
+    storage_account_name = "stfcgtfstate<suffix>"
+    container_name       = "tfstate"
+    key                  = "fcg-demo.tfstate"
+    use_azuread_auth     = true
+  }
+}

@@ -16,3 +16,18 @@ logs/
 .vscode/
 .idea/
 *.user
+
+# Terraform (state and plans may contain sensitive data; tfvars hold environment specifics)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+terraform.tfvars
+*.auto.tfvars
+infra/terraform/backend.tf
+!*.tfvars.example
+
+# Rendered Kubernetes manifests (environment-specific identifiers)
+.rendered/
