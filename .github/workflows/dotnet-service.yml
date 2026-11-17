@@ -178,10 +178,13 @@ jobs:
       - name: Render manifests
         run: |
           mkdir -p .rendered
+          # SC2016: the single-quoted list is intentional (envsubst substitutes ONLY these names).
+          # SC2094: source (k8s/azure) and target (.rendered) are different files.
+          # shellcheck disable=SC2016,SC2094
           for f in k8s/azure/*.yaml; do
             envsubst '${ACR_LOGIN_SERVER} ${IMAGE_TAG}' < "$f" > ".rendered/$(basename "$f")"
           done
-          if grep -n '\${' .rendered/*.yaml | grep -E 'ACR_LOGIN_SERVER|IMAGE_TAG'; then echo "unrendered placeholder"; exit 1; fi
+          if grep -n 'ACR_LOGIN_SERVER\|IMAGE_TAG' .rendered/*.yaml; then echo "unrendered placeholder"; exit 1; fi
           grep -n "image:" .rendered/deployment.yaml
 
       - name: Deploy (rolling update)

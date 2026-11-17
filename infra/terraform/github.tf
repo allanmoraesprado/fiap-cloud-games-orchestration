@@ -26,6 +26,15 @@ resource "azurerm_role_assignment" "github_acr_push" {
   principal_type       = "ServicePrincipal"
 }
 
+# `az acr login --name <registry>` resolves the registry through ARM (registries/read), which
+# AcrPush does not include; Reader on the registry alone keeps it read-only.
+resource "azurerm_role_assignment" "github_acr_reader" {
+  scope                = azurerm_container_registry.main.id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.github.principal_id
+  principal_type       = "ServicePrincipal"
+}
+
 # Fetch the (Entra ID) kubeconfig of the cluster...
 resource "azurerm_role_assignment" "github_aks_user" {
   scope                = azurerm_kubernetes_cluster.main.id

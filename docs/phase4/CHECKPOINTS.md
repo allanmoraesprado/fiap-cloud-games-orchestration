@@ -56,3 +56,14 @@
   rolling update 219/219 HTTP 200.
 - **Bloqueios**: K01 (assinatura Azure).
 - **Próxima ação**: commit/push; observar o CI real no GitHub; corrigir o que falhar.
+
+## CP-04 — 2026-11-17 — CI real, correções e documentação de entrega
+
+- **Status**: M4 — CI executado de verdade no GitHub (3 serviços aprovados de primeira; 2 falhas analisadas e
+  corrigidas); CD real PENDENTE (M5). M7 — documentação central em pt-BR redigida (atualizar com evidências de nuvem).
+- **Alterações**: notifications-function `6c1198f` (imagem base corrigida); orchestration: diretiva shellcheck no
+  workflow, papel `Reader` no ACR para a identidade de deploy (`az acr login` precisa de `registries/read`),
+  painéis de busca no dashboard FCG Overview, `scripts/measure-cache.sh`, README central pt-BR (README da Fase 3
+  preservado em `docs/README-phase3.md`), guias DATA, OBSERVABILITY, VIDEO-SCRIPT, CHECKLIST, FINAL-REPORT.
+- **Evidências**: runs do GitHub Actions e medição local do cache em [TEST-EVIDENCE.md](TEST-EVIDENCE.md).
+- **Próxima ação**: confirmar o novo CI (function + orchestration) verde.

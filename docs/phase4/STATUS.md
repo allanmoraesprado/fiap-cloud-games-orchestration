@@ -8,10 +8,10 @@
 | P4-M1 | APROVADO (local) | M0 | 70/70 (54 unit + 16 integração ES real); smoke Compose 0 falhas | catalog-api `b2a66b5`; orchestration (CP-02) | Busca, fuzzy, relevância, sincronização, reindexação e queda/recuperação validados. Elastic Cloud: PENDENTE (M6) |
 | P4-M2 | APROVADO (declarativo/validado) | M0 | terraform validate OK; kubeconform 55/55; ensaio local OK | orchestration (CP-03) | Terraform azurerm 5.14 + manifests k8s/azure. Provisionamento real é critério do M5 |
 | P4-M3 | PENDENTE (validação real) | M0, M2 | 134/134; KeyPerFile/seed testados; ensaio local OK | serviços + orchestration (CP-03) | Key Vault + CSI + Workload Identity implementados; leitura real de segredos depende do AKS (M5) |
-| P4-M4 | EM EXECUÇÃO | M0, M2/M3 | actionlint OK; CI real a executar | serviços + orchestration (CP-03) | Workflow reutilizável CI+CD; CD condicionado a AZURE_DEPLOY_ENABLED; CD real depende do M5 |
+| P4-M4 | PENDENTE (CD real) | M0, M2/M3 | CI real no GitHub: users/catalog/payments success; function e orchestration corrigidos | serviços + orchestration (CP-03/CP-04) | CI aprovado; CD (OIDC/ACR/AKS) implementado e ensaiado localmente, execução real depende do M5 |
 | P4-M5 | BLOQUEADO | M2, M3, M4, X1–X4 | — | — | Assinatura Azure `Warned`/inacessível; autorização de custo; Elastic Cloud |
 | P4-M6 | NÃO INICIADO | M1, M5, CD operacional | — | — | — |
-| P4-M7 | NÃO INICIADO | Evidências dos marcos anteriores | — | — | — |
+| P4-M7 | EM EXECUÇÃO | Evidências dos marcos anteriores | — | orchestration (CP-04) | README pt-BR, guias, roteiro do vídeo, checklist e relatório redigidos; faltam evidências de nuvem e dados do grupo |
 
 ## Bloqueios ativos
 

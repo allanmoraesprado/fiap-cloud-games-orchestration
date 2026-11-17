@@ -160,3 +160,43 @@ ensaio a VM do Docker Desktop caiu (distro `docker-desktop` parada) e foi reinic
 
 **Não validado localmente (exige Azure, M5/M6)**: Secrets Store CSI + Workload Identity reais, ACR privado,
 LoadBalancer público/DNS, Entra ID/kubelogin, OIDC do GitHub, Elastic Cloud.
+
+### Medição do cache Redis (ensaio local, 2026-11-17)
+
+`bash scripts/measure-cache.sh http://localhost:30180 admin@fcg.com <senha-do-segredo> 30` — Kubernetes local
+(Docker Desktop), manifests do AKS, Redis com senha, requisições pelo Kong, 30 rodadas (PUT invalida → GET MISS → GET HIT):
+
+```
+outcome  n    min    median   mean     p95     max   (ms)
+MISS     30     5.4      6.5      8.4    25.4    28.9
+HIT      30     4.0      5.0      5.9     8.4    25.3
+median MISS - HIT = 1.5 ms (23.2% of the MISS median)
+```
+
+Leitura: consulta por chave primária em catálogo pequeno — ganho de 1,5 ms (23 %) na mediana e redução da
+cauda (p95 25,4 → 8,4 ms). Medição **local**; a medição no AKS é item do P4-M6 (PENDENTE).
+
+## P4-M4 — CI real no GitHub Actions (2026-11-17)
+
+Primeira execução após o push (runners `ubuntu-latest`; CD **ignorado** porque `AZURE_DEPLOY_ENABLED` não existe):
+
+| Repositório | Run | Commit | Resultado |
+|---|---|---|---|
+| users-api | [44198758496](https://github.com/allanmoraesprado/fiap-cloud-games-users-api/actions/runs/44198758496) | `6d76552` | **success** (build, testes, Docker, Trivy) |
+| catalog-api | [44198763257](https://github.com/allanmoraesprado/fiap-cloud-games-catalog-api/actions/runs/44198763257) | `47b920a` | **success** (inclui testes de integração com Elasticsearch via Testcontainers no runner) |
+| payments-api | [44198774020](https://github.com/allanmoraesprado/fiap-cloud-games-payments-api/actions/runs/44198774020) | `3cd02a0` | **success** |
+| notifications-function | [44198777505](https://github.com/allanmoraesprado/fiap-cloud-games-notifications-function/actions/runs/44198777505) | `e240af4` | **failure** no *Security gate (CRITICAL)* |
+| orchestration | [44198650915](https://github.com/allanmoraesprado/fiap-cloud-games-orchestration/actions/runs/44198650915) | `456f124` | **failure** no *actionlint* (Terraform e kubeconform: success) |
+
+Análise e correção:
+
+- **Function / Trivy**: reproduzido localmente (`aquasec/trivy image --severity CRITICAL --ignore-unfixed`): a
+  imagem base `azure-functions/dotnet-isolated:4-dotnet-isolated8.0` trazia pacotes Debian com CVEs CRITICAL
+  corrigíveis e o runtime ASP.NET Core 8.0.31 (correção em 8.0.32). O gate funcionou como projetado. Correção no
+  Dockerfile: `apt-get upgrade` e troca do runtime .NET 8 do worker pelo 8.0.34 da imagem oficial `aspnet:8.0`.
+  Novo scan local: **0 CRITICAL corrigíveis**. Validação funcional no ensaio: worker carregando
+  `Microsoft.NETCore.App/8.0.34`, `[WELCOME EMAIL]` processado; durante a troca de pods nenhum evento foi
+  perdido (Loki mostra o evento anterior no pod antigo e o seguinte no novo).
+- **actionlint**: no runner o actionlint executa o shellcheck nos blocos `run`; avisos SC2016 (lista de
+  variáveis do `envsubst` em aspas simples, intencional) e SC2094 (falso positivo). Diretiva
+  `shellcheck disable` com justificativa; actionlint + shellcheck 0.11.0 locais sem apontamentos.

@@ -14,10 +14,10 @@ Ver [STATUS.md](STATUS.md). Resumo: M0 aprovado; M1 aprovado localmente (Elastic
 | Repositório | HEAD |
 |---|---|
 | orchestration | ver CHECKPOINTS (último CP) |
-| users-api | `3681486` |
-| catalog-api | `b2a66b5` |
-| payments-api | `72bde0f` |
-| notifications-function | `0e7e956` |
+| users-api | `6d76552` |
+| catalog-api | `47b920a` |
+| payments-api | `3cd02a0` |
+| notifications-function | `6c1198f` |
 
 ## Ambiente da estação
 
