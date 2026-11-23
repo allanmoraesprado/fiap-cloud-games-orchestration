@@ -163,7 +163,7 @@ LoadBalancer público/DNS, Entra ID/kubelogin, OIDC do GitHub, Elastic Cloud.
 
 ### Medição do cache Redis (ensaio local, 2026-11-17)
 
-`bash scripts/measure-cache.sh http://localhost:30180 admin@fcg.com <senha-do-segredo> 30` — Kubernetes local
+`bash scripts/measure-cache.sh http://localhost:30180 admin@fcg.com 30` (senha em `FCG_ADMIN_PASSWORD`) — Kubernetes local
 (Docker Desktop), manifests do AKS, Redis com senha, requisições pelo Kong, 30 rodadas (PUT invalida → GET MISS → GET HIT):
 
 ```
@@ -174,7 +174,7 @@ median MISS - HIT = 1.5 ms (23.2% of the MISS median)
 ```
 
 Leitura: consulta por chave primária em catálogo pequeno — ganho de 1,5 ms (23 %) na mediana e redução da
-cauda (p95 25,4 → 8,4 ms). Medição **local**; a medição no AKS é item do P4-M6 (PENDENTE).
+cauda (p95 25,4 → 8,4 ms). Medição **local**; a medição no AKS está na seção [Validação na nuvem](#validação-na-nuvem-azure-aks).
 
 ## P4-M4 — CI real no GitHub Actions (2026-11-17)
 
@@ -209,3 +209,210 @@ Reexecução após as correções:
 | orchestration | [44200994619](https://github.com/allanmoraesprado/fiap-cloud-games-orchestration/actions/runs/44200994619) | `b026a28` | **success** (Terraform, kubeconform com os `k8s/azure` dos 4 serviços, Compose, shellcheck, actionlint) |
 
 Estado: **CI verde nos 5 repositórios**. Job de CD: ignorado por desenho até `AZURE_DEPLOY_ENABLED=true` (M5).
+
+
+## Validação na nuvem (Azure AKS)
+
+Ambiente real provisionado em **2026-11-22** (horários em UTC; parte das execuções já em 2026-11-23 UTC) na
+assinatura `FCG-Phase4` (pay-as-you-go, `Enabled`, operador Owner), região `eastus2`.
+
+### Preflight e provisionamento (Terraform)
+
+- `scripts/azure/preflight.sh`: ferramentas OK, assinatura `Enabled`, ARM acessível, papel **Owner**,
+  7 resource providers registrados (6 registrados nesta execução), cota `standardDav6Family` 0/10 vCPU.
+  Cota `standardDASv5Family` = **0** ⇒ nó `Standard_D4as_v6` (D23).
+- `terraform plan`: **66 to add, 0 to change, 0 to destroy**; `terraform apply`: **66 added**. Segundo apply
+  (endpoint do Elastic Cloud e prefixo OIDC da Function, D24): **0 added, 3 changed, 0 destroyed**.
+- Nenhum segredo no state: os 12 `azurerm_key_vault_secret` têm `value_wo = null`; busca do valor da API key
+  do Elastic no `terraform.tfstate` e na saída do plan: **0 ocorrências**.
+- Key Vault `kv-fcg-demo-kwsfp`: 12 segredos (10 gerados, 2 externos do Elastic Cloud), listados só por nome.
+- AKS `aks-fcg-demo`: Kubernetes **1.36.5**, tier Free, 1 nó `Standard_D4as_v6` (Ubuntu 24.04), OIDC issuer +
+  Workload Identity, Entra ID + Azure RBAC, contas locais desabilitadas, add-on Key Vault Secrets Provider.
+- ACR `acrfcgdemokwsfp`: Basic, `adminUserEnabled=false`, `anonymousPullEnabled=false`.
+
+### Plataforma (`scripts/azure/deploy-platform.sh`)
+
+Namespace, 8 ServiceAccounts com Workload Identity, 8 SecretProviderClasses, PostgreSQL/Kafka/MongoDB
+(StatefulSets com PVC `managed-csi` de 8 GiB), Redis, Job de tópicos do Kafka, Kong (`LoadBalancer`
+**4.152.230.114**, DNS `fcg-demo-kwsfp.eastus2.cloudapp.azure.com`), Prometheus, Loki, Alloy e Grafana.
+
+Ocorrências na primeira execução (sem alteração de código de aplicação):
+
+- `Forbidden` logo após o apply: o papel *AKS RBAC Cluster Admin* do operador levou alguns minutos para
+  propagar; a reexecução passou.
+- O primeiro *attach* dos discos no nó levou ~10 min (`FailedAttachVolume` por timeout, depois
+  `SuccessfulAttachVolume`); a reexecução do script (idempotente) concluiu a plataforma.
+
+Segredos montados (somente nomes, `ls /mnt/secrets-store`) e status do CSI:
+
+| Workload | Segredos acessíveis | `SecretProviderClassPodStatus` |
+|---|---|---|
+| redis | `redis-password` | mounted |
+| grafana | `grafana-admin-password` | mounted |
+| postgres | `postgres-admin-password` | mounted |
+| mongo | `mongo-root-password` | mounted |
+| kong | `jwt-signing-key`, montado só no init container que gera o `kong.yml` | mounted |
+| catalog-api | **5** (role assignments por segredo): `jwt-signing-key`, `catalog-api-postgres-connection`, `catalog-api-redis-connection`, `catalog-elasticsearch-url`, `catalog-elasticsearch-api-key` | mounted |
+
+`kubectl -n fcg get secrets` → **No resources found** (nenhum Secret do Kubernetes com credenciais).
+
+### CI/CD real (GitHub Actions → ACR → AKS)
+
+Variáveis aplicadas nos 4 repositórios por `scripts/azure/github-variables.sh` (identificadores; **0 segredos**
+nos 5 repositórios). Credenciais federadas da identidade de deploy: somente `ref:refs/heads/main` dos 4
+serviços. Papéis: `AcrPush` + `Reader` (ACR), *AKS Cluster User*, *AKS RBAC Writer* no namespace `fcg`.
+
+| Execução | Resultado | Análise / correção |
+|---|---|---|
+| 1ª rodada (dispatch dos 4 serviços) | OIDC ✔, push no ACR ✔; **falha** em *Setup kubelogin* | `azure/use-kubelogin` com `latest` exige `GITHUB_TOKEN` → versão fixada `v0.2.22` (orchestration `cfe202a`) |
+| users-api [45102427739](https://github.com/allanmoraesprado/fiap-cloud-games-users-api/actions/runs/45102427739) | **success** (CI + CD + smoke) | — |
+| catalog-api [45102431677](https://github.com/allanmoraesprado/fiap-cloud-games-catalog-api/actions/runs/45102431677) | **success** (smoke inclui a busca no Elastic Cloud) | — |
+| notifications-function [45102440575](https://github.com/allanmoraesprado/fiap-cloud-games-notifications-function/actions/runs/45102440575) | **success** | valida o `sub` OIDC imutável (D24) |
+| payments-api [45102435758](https://github.com/allanmoraesprado/fiap-cloud-games-payments-api/actions/runs/45102435758) | rollout ✔; smoke **falhou** (`register` 502) | a UsersAPI ainda subia em paralelo; nova execução depois dela |
+| payments-api [45102758346](https://github.com/allanmoraesprado/fiap-cloud-games-payments-api/actions/runs/45102758346) | **success** | — |
+| **catalog-api [45103663258](https://github.com/allanmoraesprado/fiap-cloud-games-catalog-api/actions/runs/45103663258) — evento `push`** | **success** | deploy automático do commit `ee2d0dd` |
+
+Run disparado pelo push (`ee2d0ddd7645d56bc96e9aa859deb68d71f878b0`): CI 03:03:21–03:05:48 (testes, Trivy,
+gate CRITICAL), push no ACR 03:06:09–03:06:23 (digest
+`sha256:c7b2fb7f60b0804544a5876d6b8e88f7d6451da526a704e4c154b859587d979b`), deploy 03:06:29, rollout verificado
+03:06:32–03:06:59, smoke 03:06:59–03:07:05 (`GET /api/games -> 200, X-App-Version ee2d0ddd…`, busca
+`q=cosmic` → 200).
+
+`kubectl -n fcg rollout history deployment/catalog-api`:
+
+```
+REVISION  CHANGE-CAUSE
+1         allanmoraesprado/fiap-cloud-games-catalog-api@47b920a9bb087a66261674c9308bcd5736c6642a run 45102431677
+2         allanmoraesprado/fiap-cloud-games-catalog-api@ee2d0ddd7645d56bc96e9aa859deb68d71f878b0 run 45103663258
+3         allanmoraesprado/fiap-cloud-games-catalog-api@ee2d0ddd7645d56bc96e9aa859deb68d71f878b0 run 45103663258
+```
+
+(revisão 3 = `kubectl rollout restart` do teste de disponibilidade abaixo; a anotação é herdada.)
+
+Tags no ACR (somente SHA completo, nenhuma `latest`): `fcg-users-api:6d76552…`, `fcg-catalog-api:47b920a…` e
+`ee2d0dd…`, `fcg-payments-api:3cd02a0…`, `fcg-notifications-function:6c1198f…`.
+
+### Rolling Update sob carga
+
+- Durante o deploy do push, uma primeira sonda a ~3 req/s passou do limite do Kong (120 req/min por IP):
+  166 respostas **429** do rate limiting, sem `X-App-Version`. A troca `47b920a` → `ee2d0dd` foi observada,
+  mas essa medição **não** é usada como prova de disponibilidade.
+- Medição válida com `scripts/rolling-probe.sh` (0,6 s entre requisições = 100 req/min) durante
+  `kubectl -n fcg rollout restart deployment/catalog-api` (rollout 03:08:53–03:09:19, `maxUnavailable: 0`,
+  `maxSurge: 1`, 2 réplicas):
+
+```
+00:11:45  HTTP 200  X-App-Version ee2d0dd
+
+requests: 194
+  HTTP 200: 194
+  version ee2d0dd: 194
+RESULT: every request answered 200
+```
+
+As 32 requisições dentro da janela do rollout responderam 200.
+
+### Smoke real pelo gateway público
+
+`.\scripts\smoke-compose.ps1 -GatewayUrl http://fcg-demo-kwsfp.eastus2.cloudapp.azure.com -AdminPassword <Key Vault>
+-PrometheusUrl http://localhost:19090 -LokiUrl http://localhost:13100` (Prometheus e Loki por `kubectl port-forward`):
+
+```
+== FCG smoke test (Docker Compose, through Kong at http://fcg-demo-kwsfp.eastus2.cloudapp.azure.com)
+[0] Gateway
+  PASS  GET /api/games without token -> 401 from Kong
+[1] Register through Kong
+  PASS  POST /api/auth/register -> 201 (smoke.20261122235608@fcg.com)
+[2] Login through Kong
+  PASS  POST /api/auth/login -> 200, JWT received
+[3] GET /api/games twice (Redis cache)
+  PASS  both calls 200
+  PASS  X-FCG-Cache: first=MISS, second=HIT
+        purchasing 'Pixel Racers' (49.90) id 9c6fc84c-6a6a-4ef4-8fc2-07d7040b400c
+[5] Approved purchase
+  PASS  POST /api/library/acquire -> 202, orderId 8a44f90d-f980-4479-9fcc-ca07f9fc2a66
+[6] GET /api/payments/order/{orderId} (MongoDB payment history)
+  PASS  payment status Approved (reason: Approved by the payment simulation.)
+[8] GET /api/library/my-games
+  PASS  library contains 'Pixel Racers' (X-FCG-Cache: MISS)
+[9] Rejected purchase (price above the 1000 limit)
+        created 'Smoke Expensive Game' (1500) as admin
+  PASS  payment status Rejected for orderId 71045fdc-5d4d-4af1-b788-a25d63d87ba3
+[12] Search (Elasticsearch) through Kong
+  PASS  GET /api/games/search without token -> 401 from Kong
+  PASS  exact 'Cosmic Odyssey' -> top hit 'Cosmic Odyssey' (score 30.92555, total 1)
+  PASS  fuzzy 'Cosmik Odisey' -> top hit 'Cosmic Odyssey'
+  PASS  unknown terms -> 200 with total 0
+  PASS  q='a' -> 400 (validation)
+  PASS  pageSize=500 -> 400 (validation)
+  PASS  created 'Nebula Smoke 20261122235608' -> found right away by the misspelled 'Nebla Smoke 20261122235608'
+  PASS  updated to 'Quasar Smoke 20261122235608' -> index returns the new title and price
+  PASS  deleted game -> no longer returned by search
+  PASS  POST /api/games/search/reindex (Admin) -> 200, indexed 6 games
+  PASS  reindex as a regular user -> 403
+[10] Prometheus targets (http://localhost:19090)
+  PASS  7 targets up: kong, payments-api, users-api, users-api, catalog-api, catalog-api, prometheus
+[11] Loki: Notifications Function logs (http://localhost:13100)
+  PASS  [WELCOME EMAIL] for smoke.20261122235608@fcg.com: 1 line(s) in Loki
+  PASS  [PURCHASE CONFIRMATION] for 8a44f90d-f980-4479-9fcc-ca07f9fc2a66: 1 line(s) in Loki
+
+== SMOKE PASSED (0 failures)
+```
+
+### Elasticsearch gerenciado (Elastic Cloud 9.5.6)
+
+- API key validada antes do uso (cabeçalho enviado por stdin, valor nunca exibido): `authentication_type=api_key`,
+  privilégios `create_index`, `write`, `read`, `manage`, `view_index_metadata` no índice `fcg-games`.
+- CatalogAPI no AKS (endpoint e API key lidos do Key Vault): `Search index fcg-games full load: 4 games indexed.` e
+  reconciliações periódicas nos logs.
+- `_cat/indices/fcg-games` ao final: `green open fcg-games 6 docs`.
+- Busca exata, fuzzy (`Cosmik Odisey` → *Cosmic Odyssey*), sem resultados, validações 400, criação/edição/exclusão
+  refletidas no índice e reindex (Admin 200, usuário 403): ver smoke acima.
+
+### Redis — impacto medido
+
+`bash scripts/measure-cache.sh <gateway> admin@fcg.com 30` (senha em `FCG_ADMIN_PASSWORD`, lida do Key Vault).
+
+Pelo gateway público (estação no Brasil → `eastus2`; latência dominada pela rede):
+
+```
+outcome  n    min    median   mean     p95     max   (ms)
+MISS     30   252.3    273.9    276.3   308.3   312.8
+HIT      30   248.9    261.0    266.9   300.1   310.0
+median MISS - HIT = 12.9 ms (4.7% of the MISS median)
+```
+
+Dentro do cluster (`http://kong:8000`, pod temporário `cache-probe`, removido após a medição):
+
+```
+outcome  n    min    median   mean     p95     max   (ms)
+MISS     30     4.6      5.3      5.9     9.4     9.8
+HIT      30     2.9      3.4      3.9     6.9     9.1
+median MISS - HIT = 1.8 ms (34.7% of the MISS median)
+```
+
+Leitura: no servidor, o HIT reduz a mediana de 5,3 para 3,4 ms (−34,7 %) e o p95 de 9,4 para 6,9 ms; pela internet
+o ganho absoluto (12,9 ms) fica pequeno diante dos ~250 ms de rede. Prometheus: `fcg_cache_requests_total`
+hit=119, miss=66, bypass=0 após os testes.
+
+### MongoDB — integração e persistência
+
+- Smoke: compra aprovada → `GET /api/payments/order/{orderId}` = `Approved`; compra acima do limite = `Rejected`.
+- Outro usuário consultando o mesmo `orderId` → **403**.
+- Persistência: `kubectl -n fcg delete pod mongo-0` → pod recriado (UID `c04ff5d4…` → `e82a5d02…`) no mesmo PV
+  `pvc-71a3f90f-e4d1-46fb-b98a-ab34ef6349cf`; o pagamento `8a44f90d-f980-4479-9fcc-ca07f9fc2a66` continuou
+  retornando 200/`Approved` com os mesmos dados.
+
+### Observabilidade
+
+- Prometheus: 7 alvos `up` (kong, prometheus, payments-api, 2× users-api, 2× catalog-api), com rótulo `version`
+  = SHA de cada réplica; métricas `fcg_search_requests_total`, `fcg_search_index_operations_total` e
+  `fcg_cache_requests_total` coletadas.
+- Grafana 12.1.0 (`/api/health` ok) com os dashboards **FCG Overview** e **FCG Logs** provisionados.
+- Loki: logs `[WELCOME EMAIL]` e `[PURCHASE CONFIRMATION]` da Notifications Function encontrados por e-mail e
+  `orderId` (smoke).
+
+### Estado final do ambiente (2026-11-23 ~03:15 UTC)
+
+16 pods no namespace `fcg` (15 em execução e prontos, Job de tópicos `Completed`; APIs com imagem do ACR por
+SHA), 3 PVCs `Bound`, `kong-proxy` `LoadBalancer` `4.152.230.114`. Ambiente **mantido ativo** para a gravação do vídeo.

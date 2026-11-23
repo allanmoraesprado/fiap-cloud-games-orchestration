@@ -23,6 +23,15 @@
 | Notifications Function | https://github.com/allanmoraesprado/fiap-cloud-games-notifications-function |
 | NotificationsAPI (legado Fase 2) | https://github.com/allanmoraesprado/fiap-cloud-games-notifications-api |
 
+## Ambiente de demonstração (Azure)
+
+| Item | Valor |
+|---|---|
+| Gateway público (Kong) | http://fcg-demo-kwsfp.eastus2.cloudapp.azure.com |
+| Região / resource groups | `eastus2` / `rg-fcg-demo`, `rg-fcg-demo-aks-nodes` |
+| Cluster / registry / cofre | `aks-fcg-demo` (Kubernetes 1.36.5) / `acrfcgdemokwsfp` / `kv-fcg-demo-kwsfp` |
+| Busca | Elastic Cloud 9.5.6, índice `fcg-games` |
+
 ## Documentação
 
 Ponto de entrada: [README](../../README.md) do repositório de orquestração; guias em [docs/phase4/](.).
@@ -45,8 +54,23 @@ Ponto de entrada: [README](../../README.md) do repositório de orquestração; g
 Matriz completa: [REQUIREMENTS.md](REQUIREMENTS.md). Evidências executadas: [TEST-EVIDENCE.md](TEST-EVIDENCE.md).
 Checklist dos critérios finais: [CHECKLIST.md](CHECKLIST.md).
 
+## Resultados validados na nuvem (2026-11-22/23)
+
+| Critério | Resultado |
+|---|---|
+| Provisionamento | Terraform: 66 recursos (+3 atualizações); nenhum segredo no state |
+| CI/CD | CI+CD reais nos 4 serviços; push na `main` da CatalogAPI → deploy automático (run 45103663258) |
+| Rolling update | 194/194 requisições HTTP 200 durante o rollout (`maxUnavailable: 0`) |
+| Smoke pelo gateway público | 0 falhas (fluxo de compra, cache, MongoDB, busca, Prometheus, Loki) |
+| Elasticsearch | Elastic Cloud 9.5.6: exata, fuzzy (`Cosmik Odisey` → *Cosmic Odyssey*), validação, sincronização, reindex |
+| Redis | MISS→HIT; dentro do cluster a mediana cai de 5,3 para 3,4 ms (−34,7 %) |
+| MongoDB | Pagamentos aprovados/rejeitados; dados preservados após recriar o pod; 403 para outro usuário |
+| Segredos | Key Vault + CSI + Workload Identity; 0 Secrets no Kubernetes; 0 segredos no GitHub (OIDC) |
+
+Detalhes: [TEST-EVIDENCE.md](TEST-EVIDENCE.md#validação-na-nuvem-azure-aks).
+
 ## Pendências conhecidas
 
-- Assinatura Azure em estado `Warned` (inacessível) — provisionamento real, CD real e validações na nuvem
-  aguardam a liberação e a autorização de custo ([RISKS.md](RISKS.md) K01).
-- Conta/deployment no Elastic Cloud (cadastro do proprietário).
+- Dados do grupo, participante(s), Discord e link do vídeo (proprietário).
+- Gravação do vídeo ([VIDEO-SCRIPT.md](VIDEO-SCRIPT.md)); depois, destruição confirmada do ambiente
+  ([DESTROY.md](DESTROY.md)), incluindo o deployment do Elastic Cloud.

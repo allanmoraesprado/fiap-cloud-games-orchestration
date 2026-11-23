@@ -8,9 +8,10 @@ solução da Fase 3 (Compose + Kubernetes local) para a **Azure**: AKS, ACR priv
 Identity, CI/CD no GitHub Actions com OIDC, **busca avançada com Elasticsearch (Elastic Cloud)** e
 persistência poliglota.
 
-> **Estado atual**: ver [docs/phase4/STATUS.md](docs/phase4/STATUS.md). Tudo o que não depende da assinatura
-> Azure está implementado e validado (testes, CI real no GitHub, ensaio local dos manifests do AKS). O
-> provisionamento real aguarda a liberação da assinatura e a autorização de custo.
+> **Estado atual** ([docs/phase4/STATUS.md](docs/phase4/STATUS.md)): ambiente Azure **provisionado e validado**
+> (AKS, ACR, Key Vault, Elastic Cloud, CI/CD com deploy automático e rolling update sem perda de requisições).
+> Gateway público: `http://fcg-demo-kwsfp.eastus2.cloudapp.azure.com` — evidências em
+> [TEST-EVIDENCE.md](docs/phase4/TEST-EVIDENCE.md#validação-na-nuvem-azure-aks).
 
 ## Repositórios
 
@@ -104,6 +105,7 @@ terraform -chdir=infra/terraform init && terraform -chdir=infra/terraform apply
 bash scripts/azure/deploy-platform.sh                              # dados, Kong, observabilidade, identidades
 bash scripts/azure/github-variables.sh                             # habilita o CD nos serviços
 # push na main de cada serviço (ou "Run workflow") -> build, testes, Trivy, ACR, rolling update, smoke
+# (primeira vez: UsersAPI antes das demais — o smoke de cada serviço usa registro/login)
 ```
 
 Ensaio local dos manifests do AKS (sem Azure): `bash scripts/azure/simulate-local.sh up --apps` ·

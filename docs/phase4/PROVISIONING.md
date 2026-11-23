@@ -51,7 +51,7 @@ cp infra/terraform/environments/demo.tfvars.example infra/terraform/terraform.tf
 #    edite subscription_id, budget_contact_emails, elasticsearch_url
 
 # 2) plano e aplicação (a API key do Elastic Cloud só passa por variável de ambiente)
-export TF_VAR_elasticsearch_api_key='<api-key-base64>'
+export TF_VAR_elasticsearch_api_key="$(tr -d '\r\n' < <arquivo-local-da-api-key>)"   # valor não aparece na linha de comando
 terraform -chdir=infra/terraform init
 terraform -chdir=infra/terraform plan -out tfplan
 terraform -chdir=infra/terraform apply tfplan          # ~10-15 min (AKS)
@@ -80,7 +80,27 @@ bash scripts/azure/github-variables.sh            # imprime/aplica AZURE_CLIENT_
 | Imagens no ACR | `az acr repository show-tags -n <acr> --repository fcg-catalog-api -o table` |
 | Senha do admin semeado (operador) | `az keyvault secret show --vault-name <kv> -n users-admin-seed-password --query value -o tsv` |
 
-## 5. Ensaio local dos manifests (sem Azure)
+## 5. Observações da execução real (2026-11-22)
+
+- **Cota de VM**: assinaturas novas podem ter cota 0 para a família `DASv5`; o preflight mostra a cota da família
+  escolhida. Usado `Standard_D4as_v6` (D23). Para listar tamanhos com cota:
+  `az vm list-usage -l eastus2 -o table`.
+- **Providers**: numa assinatura nova, `Microsoft.ContainerService`, `ContainerRegistry`, `KeyVault`,
+  `ManagedIdentity`, `Network` e `Compute` precisam ser registrados (`az provider register -n <ns>`, sem custo).
+- **Kubeconfig separado**: `export KUBECONFIG="$HOME/.kube/fcg-aks-demo"` antes dos scripts; `aks_credentials`
+  grava nesse arquivo e não altera o contexto padrão da estação.
+- **RBAC do AKS**: logo após o apply, o papel *AKS RBAC Cluster Admin* pode levar alguns minutos para propagar
+  (`Forbidden`); reexecute o `deploy-platform.sh` (idempotente).
+- **Discos**: o primeiro *attach* dos PVCs levou ~10 min (`FailedAttachVolume` por timeout antes do sucesso);
+  reexecute o script se o `rollout status` expirar.
+- **Git Bash**: argumentos que começam com `/` são convertidos em caminhos do Windows — use
+  `//mnt/secrets-store` em `kubectl exec ... ls` e `MSYS_NO_PATHCONV=1` em comandos `az` com escopos
+  `/subscriptions/...` (o preflight já faz isso).
+- **Elastic Cloud**: a API key (valor `encoded`, base64 de `id:key`) vai só por `TF_VAR_elasticsearch_api_key`
+  lida de arquivo local no mesmo comando do `terraform apply`; para trocar endpoint/chave incremente
+  `elasticsearch_secret_version` e reinicie a CatalogAPI.
+
+## 6. Ensaio local dos manifests (sem Azure)
 
 `bash scripts/azure/simulate-local.sh up --apps` aplica os mesmos manifests de `k8s/azure` no Kubernetes do
 Docker Desktop (namespace `fcg-sim`), trocando apenas o volume CSI do Key Vault por um Secret local,

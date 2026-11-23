@@ -78,3 +78,19 @@
 - **Ambientes locais criados nesta sessão**: removidos (`fcg-p4`, `fcg-sim`, imagens `:sim`, cache do Trivy).
   Ambientes pré-existentes não foram alterados (exceto a reinicialização do Docker Desktop após a queda da VM).
 - **Bloqueio**: assinatura Azure (K01). Próximo passo: [HANDOFF.md](HANDOFF.md).
+
+## CP-06 — 2026-11-23 — Provisionamento real e validação na nuvem
+
+- **Status**: M1–M6 APROVADOS com evidências reais; M7 EM EXECUÇÃO (dados do grupo, gravação e link do vídeo).
+- **Azure**: preflight OK (Owner; providers registrados; cota DASv5 = 0 ⇒ `Standard_D4as_v6`, D23); Terraform
+  66 recursos + 3 atualizações; plataforma no AKS; variáveis do GitHub; CD real nos 4 serviços.
+- **Correções**: prefixo OIDC por repositório (immutable subject, D24); alertas do orçamento para Owners (D25);
+  preflight no Git Bash; `aks_credentials` respeita `KUBECONFIG`; kubelogin fixado no workflow;
+  `measure-cache.sh` sem senha na linha de comando; `scripts/rolling-probe.sh` (sonda dentro do rate limit).
+- **Evidências**: smoke real 0 falhas; push → deploy automático (run 45103663258); rollout 194/194 HTTP 200;
+  Redis in-cluster 5,3 → 3,4 ms; MongoDB persistente; Elastic Cloud green; Prometheus/Grafana/Loki
+  ([TEST-EVIDENCE.md](TEST-EVIDENCE.md#validação-na-nuvem-azure-aks)).
+- **Ambiente**: **ativo** para a gravação (não destruído).
+- **HEADs**: orchestration (este commit), users-api `6d76552`, catalog-api `ee2d0dd`, payments-api `3cd02a0`,
+  notifications-function `6c1198f`.
+- **Próxima ação**: gravação do vídeo pelo proprietário; depois DESTROY (confirmado pelo proprietário).

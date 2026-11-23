@@ -36,9 +36,9 @@ flowchart LR
 
 | ID | Dependência | Responsável | Situação |
 |---|---|---|---|
-| X1 | Assinatura Azure ativa (estado `Enabled`) com permissão Owner/Contributor + User Access Administrator | Proprietário | **BLOQUEADO** — estado `Warned` |
-| X2 | Autorização explícita do custo estimado ([COSTS.md](COSTS.md)) | Proprietário | Pendente |
-| X3 | Conta Elastic Cloud + deployment + API key | Proprietário (cadastro humano) | Pendente |
-| X4 | Variáveis de repositório no GitHub (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `ACR_NAME`, `AKS_NAME`, `AKS_RESOURCE_GROUP`, `AZURE_DEPLOY_ENABLED`) | Proprietário (ou `gh` autenticado) | Pendente (após M5) |
-| X5 | Terraform CLI na estação do proprietário | Proprietário | Pendente (`winget install Hashicorp.Terraform`) |
+| X1 | Assinatura Azure ativa (estado `Enabled`) com permissão Owner/Contributor + User Access Administrator | Proprietário | **Resolvido** (2026-11-22) — assinatura `FCG-Phase4` `Enabled`, operador Owner |
+| X2 | Autorização explícita do custo estimado ([COSTS.md](COSTS.md)) | Proprietário | **Resolvido** — autorização limitada a COSTS.md (≈ US$ 5,7/dia com D23) |
+| X3 | Conta Elastic Cloud + deployment + API key | Proprietário (cadastro humano) | **Resolvido** — deployment Elastic Cloud 9.5.6 + API key (arquivo local do proprietário → Key Vault) |
+| X4 | Variáveis de repositório no GitHub (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `ACR_NAME`, `AKS_NAME`, `AKS_RESOURCE_GROUP`, `AZURE_DEPLOY_ENABLED`) | Proprietário (ou `gh` autenticado) | **Resolvido** — `gh` autenticado; variáveis aplicadas por `github-variables.sh` |
+| X5 | Terraform CLI na estação do proprietário | Proprietário | **Resolvido** — Terraform 1.17.2 instalado (winget) |
 | X6 | Dados do relatório (grupo, participantes, Discord, link do vídeo) | Proprietário | Pendente (M7) |

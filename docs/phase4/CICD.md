@@ -59,9 +59,26 @@ Nenhum *secret* do GitHub é necessário.
 
 ## Demonstração do live deploy (roteiro)
 
-1. Alterar algo visível e controlado (ex.: mensagem de log ou campo de resposta) na CatalogAPI.
+1. Alterar algo controlado na CatalogAPI (ex.: uma linha do README ou uma mensagem de log): qualquer commit gera
+   uma imagem nova com o SHA, visível no `X-App-Version`.
 2. `git commit` + `git push origin main`.
 3. Acompanhar o run em *Actions*: CI (testes, Trivy) → CD (OIDC, push, rollout, smoke).
-4. Durante o rollout: `kubectl -n fcg get pods -l app=catalog-api -w` e um laço de requisições mostrando
-   200 contínuo e a troca do `X-App-Version`.
+4. Durante o rollout: `kubectl -n fcg get pods -l app=catalog-api -w` e
+   `PACE_SECONDS=1 bash scripts/rolling-probe.sh $GW 600` (200 contínuo e troca do `X-App-Version`; abaixo do
+   rate limit do Kong de 120 req/min por IP).
 5. `az acr repository show-tags -n <acr> --repository fcg-catalog-api` e `kubectl -n fcg rollout history deploy/catalog-api`.
+
+## Lições da primeira execução real (2026-11-22)
+
+- `azure/use-kubelogin` com `kubelogin-version: latest` consulta a API do GitHub e falha sem `GITHUB_TOKEN`:
+  versão fixada (`v0.2.22`).
+- Repositórios GitHub recentes usam *immutable subject claims* no token OIDC
+  (`repo:<owner>@<id>/<repo>@<id>:ref:refs/heads/main`): o prefixo é configurado por repositório em
+  `github_oidc_subject_prefixes` (D24). Conferir com
+  `gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix`.
+- No primeiro deploy, a UsersAPI deve subir antes das demais: o smoke de cada serviço registra e autentica um
+  usuário pelo gateway.
+- Sondas de disponibilidade precisam respeitar o rate limit do Kong (120 req/min por IP); acima disso as
+  respostas 429 mascaram o resultado do rollout.
+
+Execuções reais e análise: [TEST-EVIDENCE.md](TEST-EVIDENCE.md#cicd-real-github-actions--acr--aks).

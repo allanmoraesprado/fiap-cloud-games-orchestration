@@ -35,7 +35,9 @@ Se o state local tiver se perdido, a remoção manual equivalente é `az group d
 
 ## 3. GitHub
 
-- [ ] Definir `AZURE_DEPLOY_ENABLED=false` (ou remover) nas variáveis dos repositórios para que pushes na
+- [ ] `bash scripts/azure/github-variables.sh --disable` (define `AZURE_DEPLOY_ENABLED=false` nos 4 serviços) **antes**
+      do destroy, para que pushes na `main` não tentem implantar em um ambiente inexistente. Alternativa manual:
+      definir `AZURE_DEPLOY_ENABLED=false` (ou remover) nas variáveis dos repositórios para que pushes na
       `main` não tentem implantar em um ambiente inexistente. Os identificadores (client id, nomes) não são
       segredos, mas deixam de ter utilidade.
 
@@ -43,3 +45,5 @@ Se o state local tiver se perdido, a remoção manual equivalente é `az group d
 
 - [ ] Apagar `infra/terraform/terraform.tfstate*`, `tfplan` e `terraform.tfvars` quando não forem mais necessários.
 - [ ] `bash scripts/azure/simulate-local.sh down` (namespace `fcg-sim`, se usado).
+- [ ] Apagar o kubeconfig dedicado `~/.kube/fcg-aks-demo`.
+- [ ] A API key do Elastic Cloud em arquivo local é do proprietário: excluir o arquivo só por decisão dele.
