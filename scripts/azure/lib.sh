@@ -65,10 +65,13 @@ render() {
   fi
 }
 
-# Points kubectl at the cluster with Entra ID auth (local accounts are disabled).
+# Points kubectl at the cluster with Entra ID auth (local accounts are disabled). Honors
+# KUBECONFIG (a single file), so the cluster can be kept out of the default kubeconfig:
+#   export KUBECONFIG="$HOME/.kube/fcg-aks-demo"
 aks_credentials() {
-  az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" --overwrite-existing --only-show-errors
-  kubelogin convert-kubeconfig -l azurecli
+  local file="${KUBECONFIG:-$HOME/.kube/config}"
+  az aks get-credentials --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" --file "$file" --overwrite-existing --only-show-errors
+  kubelogin convert-kubeconfig -l azurecli --kubeconfig "$file"
 }
 
 # configmap_from_files <name> <key=path>...: idempotent create-or-update.

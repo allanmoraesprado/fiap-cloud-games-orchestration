@@ -1,6 +1,8 @@
 # GitHub Actions -> Azure without stored credentials (OIDC). The deploy identity trusts only
 # workflow runs on the `main` branch of the listed repositories; pull requests (subject
-# repo:<owner>/<repo>:pull_request) cannot obtain a token.
+# repo:<owner>/<repo>:pull_request) cannot obtain a token. Repositories that use GitHub immutable
+# subject claims (repo:<owner>@<owner-id>/<repo>@<repo-id>) get their prefix from
+# var.github_oidc_subject_prefixes.
 resource "azurerm_user_assigned_identity" "github" {
   name                = local.names.github
   location            = azurerm_resource_group.main.location
@@ -14,7 +16,7 @@ resource "azurerm_federated_identity_credential" "github" {
   name                      = "gh-${each.key}-main"
   user_assigned_identity_id = azurerm_user_assigned_identity.github.id
   issuer                    = "https://token.actions.githubusercontent.com"
-  subject                   = "repo:${var.github_owner}/${each.key}:ref:refs/heads/main"
+  subject                   = "${lookup(var.github_oidc_subject_prefixes, each.key, "repo:${var.github_owner}/${each.key}")}:ref:refs/heads/main"
   audience                  = ["api://AzureADTokenExchange"]
 }
 

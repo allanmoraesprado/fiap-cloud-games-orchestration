@@ -1,7 +1,8 @@
 # Monthly cost guardrail. Filtered to the environment resource group AND the AKS node
-# resource group (the VM, disks, IPs and load balancer are billed there).
+# resource group (the VM, disks, IPs and load balancer are billed there). Alerts go to the
+# subscription Owners (no address needed in the configuration) and to the optional extra e-mails.
 resource "azurerm_consumption_budget_subscription" "main" {
-  count = var.budget_amount > 0 && length(var.budget_contact_emails) > 0 ? 1 : 0
+  count = var.budget_amount > 0 ? 1 : 0
 
   name            = local.names.budget
   subscription_id = "/subscriptions/${var.subscription_id}"
@@ -26,6 +27,7 @@ resource "azurerm_consumption_budget_subscription" "main" {
     operator       = "GreaterThan"
     threshold_type = "Actual"
     contact_emails = var.budget_contact_emails
+    contact_roles  = ["Owner"]
   }
 
   notification {
@@ -34,6 +36,7 @@ resource "azurerm_consumption_budget_subscription" "main" {
     operator       = "GreaterThan"
     threshold_type = "Actual"
     contact_emails = var.budget_contact_emails
+    contact_roles  = ["Owner"]
   }
 
   notification {
@@ -42,6 +45,7 @@ resource "azurerm_consumption_budget_subscription" "main" {
     operator       = "GreaterThan"
     threshold_type = "Forecasted"
     contact_emails = var.budget_contact_emails
+    contact_roles  = ["Owner"]
   }
 
   depends_on = [azurerm_kubernetes_cluster.main]

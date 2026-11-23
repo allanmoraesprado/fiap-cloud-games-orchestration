@@ -126,3 +126,24 @@ Formato: contexto → decisão → consequências. Decisões podem ser revistas;
 ## D22 — Senha do administrador semeado
 - **Decisão**: `Seed:AdminPassword` configurável (padrão de desenvolvimento em `appsettings.json`); no AKS vem
   do Key Vault e o usuário comum de demonstração não é semeado (`Seed__UserPassword=""`).
+
+## D23 — Tamanho do nó AKS: `Standard_D4as_v6`
+- **Contexto**: na assinatura `FCG-Phase4` (pay-as-you-go, 2026-11-22) a cota da família `standardDASv5Family` em
+  `eastus2` é **0** e o SKU `Standard_D4as_v5` aparece como `NotAvailableForSubscription`; a família
+  `standardDav6Family` tem cota de 10 vCPU.
+- **Decisão**: `node_vm_size = "Standard_D4as_v6"` (mesma classe: AMD, 4 vCPU / 16 GiB, Gen2, disco NVMe).
+- **Custo**: US$ 0,182/h contra US$ 0,172/h (Azure Retail Prices API, 2026-11-22) ⇒ **+US$ 0,24/dia (≈ +4 %)**,
+  dentro da estimativa aprovada (ver [COSTS.md](COSTS.md)).
+
+## D24 — Prefixo do `sub` OIDC por repositório
+- **Contexto**: repositórios GitHub criados recentemente emitem tokens OIDC com *immutable subject claims*
+  (`repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main`). É o caso de
+  `fiap-cloud-games-notifications-function`; os demais usam `repo:<owner>/<repo>`.
+- **Decisão**: variável `github_oidc_subject_prefixes` (mapa repositório → prefixo) usada na credencial federada da
+  identidade de deploy. O prefixo é consultado com
+  `gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix`.
+- **Motivo**: sem isso, o `azure/login` da Function falharia (`AADSTS700213: No matching federated identity record`).
+
+## D25 — Alertas do orçamento para os Owners da assinatura
+- **Decisão**: as notificações do budget usam `contact_roles = ["Owner"]` (e-mails extras opcionais).
+- **Motivo**: não registrar endereço pessoal na configuração; os Owners já recebem os alertas de custo.

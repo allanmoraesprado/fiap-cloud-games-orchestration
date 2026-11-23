@@ -102,6 +102,12 @@ variable "github_deploy_repositories" {
   ]
 }
 
+variable "github_oidc_subject_prefixes" {
+  description = "Per-repository OIDC subject prefix when it is not repo:<owner>/<repo> (repositories using GitHub immutable subject claims). Find it with: gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix"
+  type        = map(string)
+  default     = {}
+}
+
 variable "budget_amount" {
   description = "Monthly budget (billing currency) for the environment resource groups. 0 disables the budget."
   type        = number
@@ -109,7 +115,7 @@ variable "budget_amount" {
 }
 
 variable "budget_contact_emails" {
-  description = "E-mails notified by the budget alerts. Keep them in terraform.tfvars (not committed)."
+  description = "Extra e-mails notified by the budget alerts (subscription Owners are always notified). Keep them in terraform.tfvars (not committed)."
   type        = list(string)
   default     = []
 }

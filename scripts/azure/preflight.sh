@@ -7,6 +7,8 @@
 #  - required local tools
 # Usage: bash scripts/azure/preflight.sh <subscription-id> [location] [vm-size]
 set -uo pipefail
+# Git Bash would rewrite "/subscriptions/..." arguments into Windows paths.
+export MSYS_NO_PATHCONV=1
 SUB="${1:?subscription id required}"; LOC="${2:-eastus2}"; VM="${3:-Standard_D4as_v5}"
 fail=0
 ok()   { printf '  OK    %s\n' "$*"; }

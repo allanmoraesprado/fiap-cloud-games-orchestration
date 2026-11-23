@@ -6,7 +6,7 @@ subscription_id = "00000000-0000-0000-0000-000000000000"
 environment     = "demo"
 location        = "eastus2"
 
-node_vm_size = "Standard_D4as_v5" # alternatives: Standard_D2as_v5 (x2 nodes), Standard_B2ms
+node_vm_size = "Standard_D4as_v6" # check quota first (preflight.sh); alternatives: Standard_D4as_v5, Standard_D4as_v7
 node_count   = 1
 
 # Optional: restrict the Kubernetes API to these CIDRs (leave empty when GitHub-hosted runners deploy).
@@ -14,10 +14,16 @@ api_server_authorized_ip_ranges = []
 
 github_owner = "allanmoraesprado"
 
-# Budget alerts (billing currency). Use a real mailbox you read.
+# Repositories whose OIDC token uses GitHub immutable subject claims (newer repositories). Check each one with
+#   gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix
+github_oidc_subject_prefixes = {
+  "fiap-cloud-games-notifications-function" = "repo:allanmoraesprado@86745790/fiap-cloud-games-notifications-function@1371923781"
+}
+
+# Budget alerts (billing currency). Subscription Owners are always notified; add extra mailboxes if needed.
 budget_amount         = 50
-budget_contact_emails = ["owner@example.com"]
-budget_start_date     = "2026-12-01T00:00:00Z"
+budget_contact_emails = []
+budget_start_date     = "2026-11-01T00:00:00Z" # first day of the current or a future month
 
 # Elastic Cloud endpoint (HTTPS). The API key goes through TF_VAR_elasticsearch_api_key.
 elasticsearch_url            = "https://<deployment>.es.<region>.azure.elastic-cloud.com:443"

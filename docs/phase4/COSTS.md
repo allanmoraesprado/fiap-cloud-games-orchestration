@@ -9,6 +9,7 @@
 | Recurso | SKU | Preço unitário | Fonte |
 |---|---|---|---|
 | Nó AKS (VM Linux) | `Standard_D4as_v5` (4 vCPU / 16 GiB) | US$ 0,172 / hora | Retail Prices API |
+| **Nó provisionado** (D23) | `Standard_D4as_v6` (4 vCPU / 16 GiB) | US$ 0,182 / hora | Retail Prices API (2026-11-22) |
 | Alternativa | `Standard_D2as_v5` (2 vCPU / 8 GiB) | US$ 0,086 / hora | Retail Prices API |
 | Alternativa | `Standard_B2ms` (2 vCPU / 8 GiB, burstable) | US$ 0,0832 / hora | Retail Prices API |
 | Plano de controle AKS | tier Free | US$ 0 | (Standard/Uptime SLA = US$ 0,10/h, não usado) |
@@ -24,7 +25,7 @@
 
 | Item | Cálculo | US$/dia |
 |---|---|---|
-| 1 × `Standard_D4as_v5` | 0,172 × 24 | 4,13 |
+| 1 × `Standard_D4as_v5` (estimativa aprovada) | 0,172 × 24 | 4,13 |
 | Disco do SO P6 | 9,28 / 30 | 0,31 |
 | 3 PVCs E2 | 3 × 0,60 / 30 | 0,06 |
 | Load Balancer | ≈ 0,025 × 24 | ≈ 0,60 |
@@ -34,6 +35,8 @@
 | **Total estimado** | | **≈ 5,5 / dia** |
 
 - Semana de demonstração ligada 24 h: **≈ US$ 38**.
+- **Provisionado em 2026-11-22 com `Standard_D4as_v6`** (cota DASv5 = 0 na assinatura): 0,182 × 24 = 4,37 ⇒
+  total **≈ US$ 5,7/dia** (+US$ 0,24/dia, ≈ +4 %; ver [DECISIONS.md](DECISIONS.md) D23).
 - Cluster parado (`az aks stop`): VM deixa de ser cobrada; continuam disco do SO, PVCs, IPs, LB e ACR ⇒ **≈ US$ 1,4/dia**.
 - Egress: primeiros 100 GB/mês gratuitos — irrelevante para a demonstração.
 - **Não habilitados** (evitam custo variável): Container Insights / Log Analytics, Defender for Containers,
