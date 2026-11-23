@@ -6,14 +6,17 @@
 # Samples are classified by the X-FCG-Cache header (not by position) and summarized
 # (min / median / mean / p95 / max, in ms). Calls are paced under the Kong rate limit.
 #
-# Usage: bash scripts/measure-cache.sh <gateway-url> <admin-email> <admin-password> [rounds]
-# Works against Compose (http://localhost:8000), the local AKS rehearsal or AKS.
+# Usage: FCG_ADMIN_PASSWORD=<password> bash scripts/measure-cache.sh <gateway-url> <admin-email> [rounds]
+# The password is read from the environment and sent on stdin, so it never appears in a
+# command line. Works against Compose (http://localhost:8000), the local AKS rehearsal or AKS.
 set -euo pipefail
-base="${1%/}"; admin_email="$2"; admin_password="$3"; rounds="${4:-30}"
+base="${1%/}"; admin_email="$2"; rounds="${3:-30}"
+admin_password="${FCG_ADMIN_PASSWORD:?set FCG_ADMIN_PASSWORD to the administrator password}"
 pace="${PACE_SECONDS:-0.7}"
 
-token="$(curl -s -X POST "$base/api/auth/login" -H 'Content-Type: application/json' \
-  -d "{\"email\":\"$admin_email\",\"password\":\"$admin_password\"}" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+token="$(printf '{"email":"%s","password":"%s"}' "$admin_email" "$admin_password" \
+  | curl -s -X POST "$base/api/auth/login" -H 'Content-Type: application/json' --data-binary @- \
+  | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
 [[ -n "$token" ]] || { echo "admin login failed"; exit 1; }
 auth=(-H "Authorization: Bearer $token")
 

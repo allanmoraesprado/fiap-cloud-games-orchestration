@@ -34,7 +34,7 @@ para o PostgreSQL (`X-FCG-Cache: BYPASS`) se o Redis cair. Na Fase 4 o Redis pas
 
 ### Medição de impacto
 
-`scripts/measure-cache.sh <gateway> <admin-email> <admin-senha> [rodadas]` — a cada rodada: `PUT` do mesmo
+`FCG_ADMIN_PASSWORD=<senha> bash scripts/measure-cache.sh <gateway> <admin-email> [rodadas]` (senha lida do ambiente, nunca na linha de comando) — a cada rodada: `PUT` do mesmo
 jogo (invalida a entrada), `GET` (MISS, cronometrado), `GET` (HIT, cronometrado). Classificação pelo
 cabeçalho `X-FCG-Cache`, estatísticas min/mediana/média/p95/máx.
 
